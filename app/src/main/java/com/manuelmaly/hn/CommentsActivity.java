@@ -22,6 +22,7 @@ import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.View.OnLongClickListener;
@@ -41,6 +42,8 @@ import com.manuelmaly.hn.model.HNCommentTreeNode;
 import com.manuelmaly.hn.model.HNPost;
 import com.manuelmaly.hn.model.HNPostComments;
 import com.manuelmaly.hn.reuse.LinkifiedTextView;
+import com.manuelmaly.hn.reuse.SwipeNavigationController;
+import com.manuelmaly.hn.reuse.SwipeNavigator;
 import com.manuelmaly.hn.task.HNPostCommentsTask;
 import com.manuelmaly.hn.task.HNVoteTask;
 import com.manuelmaly.hn.task.ITaskFinishedHandler;
@@ -105,6 +108,8 @@ public class CommentsActivity extends BaseListActivity implements
 
     boolean mShouldShowRefreshing = false;
 
+    SwipeNavigationController mSwipeNav;
+
     @AfterViews
     public void init() {
         mPost = (HNPost) getIntent().getSerializableExtra(EXTRA_HNPOST);
@@ -159,6 +164,16 @@ public class CommentsActivity extends BaseListActivity implements
                 startFeedLoading();
             }
         });
+
+        mSwipeNav = new SwipeNavigationController(this, SwipeNavigator.Page.COMMENTS,
+                new SwipeNavigationController.Callbacks() {
+                    @Override
+                    public void onNavigate(SwipeNavigator.Page target) {
+                        if (target == SwipeNavigator.Page.ARTICLE) {
+                            openArticleReader(R.anim.slide_in_left, R.anim.slide_out_right);
+                        }
+                    }
+                });
 
         loadIntermediateCommentsFromStore();
         startFeedLoading();
@@ -369,6 +384,10 @@ public class CommentsActivity extends BaseListActivity implements
     }
 
     private void openArticleReader() {
+        openArticleReader(android.R.anim.fade_in, android.R.anim.fade_out);
+    }
+
+    private void openArticleReader(int enterAnim, int exitAnim) {
         Intent intent = new Intent(this, ArticleReaderActivity_.class);
         intent.putExtra(CommentsActivity.EXTRA_HNPOST, mPost);
         if (getIntent().getStringExtra(
@@ -380,9 +399,18 @@ public class CommentsActivity extends BaseListActivity implements
         }
 
         startActivity(intent);
-        overridePendingTransition(android.R.anim.fade_in,
-                android.R.anim.fade_out);
+        overridePendingTransition(enterAnim, exitAnim);
         finish();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        // Observe gestures for swipe navigation without consuming them, so the comments list
+        // still scrolls and pull-to-refresh still works.
+        if (mSwipeNav != null) {
+            mSwipeNav.onTouchEvent(ev);
+        }
+        return super.dispatchTouchEvent(ev);
     }
 
     private void initCommentsHeader() {

@@ -17,6 +17,8 @@ dependencies {
 
     implementation "cz.msebera.android:httpclient:4.5.8"
 
+    testImplementation "junit:junit:4.12"
+
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 }
 

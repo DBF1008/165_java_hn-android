@@ -3,6 +3,8 @@ package com.manuelmaly.hn;
 import com.manuelmaly.hn.model.HNFeed;
 import com.manuelmaly.hn.model.HNPost;
 import com.manuelmaly.hn.parser.BaseHTMLParser;
+import com.manuelmaly.hn.reuse.SwipeNavigationController;
+import com.manuelmaly.hn.reuse.SwipeNavigator;
 import com.manuelmaly.hn.server.HNCredentials;
 import com.manuelmaly.hn.task.HNFeedTaskLoadMore;
 import com.manuelmaly.hn.task.HNFeedTaskMainFeed;
@@ -38,6 +40,7 @@ import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.View.OnLongClickListener;
@@ -98,6 +101,8 @@ public class MainActivity extends BaseListActivity implements
 
     boolean mShouldShowRefreshing = false;
 
+    SwipeNavigationController mSwipeNav;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -148,6 +153,16 @@ public class MainActivity extends BaseListActivity implements
         loadAlreadyReadCache();
         loadIntermediateFeedFromStore();
         startFeedLoading();
+
+        mSwipeNav = new SwipeNavigationController(this, SwipeNavigator.Page.LIST,
+                new SwipeNavigationController.Callbacks() {
+                    @Override
+                    public void onNavigate(SwipeNavigator.Page target) {
+                        // The list is the left-most screen and has no selected article, so neither
+                        // swipe direction has a destination here. The reader and comments screens
+                        // swipe back to this list. Wired for a uniform model across all screens.
+                    }
+                });
     }
 
     @Override
@@ -177,6 +192,16 @@ public class MainActivity extends BaseListActivity implements
 
         // User may have toggled pull-down refresh, so toggle the SwipeRefreshLayout.
         toggleSwipeRefreshLayout();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        // Observe gestures for swipe navigation without consuming them, so the posts list still
+        // scrolls and pull-to-refresh still works.
+        if (mSwipeNav != null) {
+            mSwipeNav.onTouchEvent(ev);
+        }
+        return super.dispatchTouchEvent(ev);
     }
 
     @Override

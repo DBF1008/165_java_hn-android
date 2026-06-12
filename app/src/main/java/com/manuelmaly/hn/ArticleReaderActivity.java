@@ -15,6 +15,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.webkit.WebView;
@@ -22,6 +23,8 @@ import android.webkit.WebViewClient;
 import android.widget.TextView;
 
 import com.manuelmaly.hn.model.HNPost;
+import com.manuelmaly.hn.reuse.SwipeNavigationController;
+import com.manuelmaly.hn.reuse.SwipeNavigator;
 import com.manuelmaly.hn.util.FontHelper;
 import com.manuelmaly.hn.util.SpotlightActivity;
 import com.manuelmaly.hn.util.ViewedUtils;
@@ -65,6 +68,8 @@ public class ArticleReaderActivity extends AppCompatActivity {
 
   boolean mWebViewIsLoading = false;
 
+  SwipeNavigationController mSwipeNav;
+
   @AfterViews
   @SuppressLint("SetJavaScriptEnabled")
   public void init() {
@@ -99,6 +104,18 @@ public class ArticleReaderActivity extends AppCompatActivity {
         mWebView.loadUrl(getArticleViewURL(mPost, mHtmlProvider, ArticleReaderActivity.this));
       }
     });
+
+    mSwipeNav = new SwipeNavigationController( this, SwipeNavigator.Page.ARTICLE,
+        new SwipeNavigationController.Callbacks() {
+          @Override
+          public void onNavigate( SwipeNavigator.Page target ) {
+            if (target == SwipeNavigator.Page.COMMENTS) {
+              launchCommentsActivity( R.anim.slide_in_right, R.anim.slide_out_left );
+            } else if (target == SwipeNavigator.Page.LIST) {
+              navigateBackToList();
+            }
+          }
+        } );
   }
 
   @Override
@@ -245,14 +262,35 @@ public class ArticleReaderActivity extends AppCompatActivity {
   }
 
   private void launchCommentsActivity() {
+    launchCommentsActivity( android.R.anim.fade_in, android.R.anim.fade_out );
+  }
+
+  private void launchCommentsActivity( int enterAnim, int exitAnim ) {
     Intent i = new Intent( ArticleReaderActivity.this, CommentsActivity_.class );
     i.putExtra( CommentsActivity.EXTRA_HNPOST, mPost );
     if (getIntent().getStringExtra( EXTRA_HTMLPROVIDER_OVERRIDE ) != null) {
       i.putExtra( EXTRA_HTMLPROVIDER_OVERRIDE, getIntent().getStringExtra( EXTRA_HTMLPROVIDER_OVERRIDE ) );
     }
     startActivity( i );
-    overridePendingTransition( android.R.anim.fade_in, android.R.anim.fade_out );
+    overridePendingTransition( enterAnim, exitAnim );
     finish();
+  }
+
+  private void navigateBackToList() {
+    // Return to the article list that already sits underneath this activity on the back stack,
+    // sliding this screen out to the right (matches the platform "back" direction).
+    finish();
+    overridePendingTransition( R.anim.slide_in_left, R.anim.slide_out_right );
+  }
+
+  @Override
+  public boolean dispatchTouchEvent( MotionEvent ev ) {
+    // Observe gestures for swipe navigation without consuming them, so the WebView still
+    // receives all touch events normally.
+    if (mSwipeNav != null) {
+      mSwipeNav.onTouchEvent( ev );
+    }
+    return super.dispatchTouchEvent( ev );
   }
 
   private void setShowRefreshing(boolean showRefreshing) {
