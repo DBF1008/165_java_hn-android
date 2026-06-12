@@ -10,7 +10,7 @@ public class HNFeedTaskMainFeed extends HNFeedTaskBase {
     private static HNFeedTaskMainFeed instance;
     public static final String BROADCAST_INTENT_ID = "HNFeedMain";
     
-    private static HNFeedTaskMainFeed getInstance(int taskCode) {
+    public static HNFeedTaskMainFeed getInstance(int taskCode) {
         synchronized (HNFeedTaskBase.class) {
             if (instance == null)
                 instance = new HNFeedTaskMainFeed(taskCode);

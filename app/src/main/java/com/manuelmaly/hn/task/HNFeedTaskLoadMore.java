@@ -12,7 +12,7 @@ public class HNFeedTaskLoadMore extends HNFeedTaskBase {
     private static HNFeedTaskLoadMore instance;
     public static final String BROADCAST_INTENT_ID = "HNFeedLoadMore";
 
-    private static HNFeedTaskLoadMore getInstance(int taskCode) {
+    public static HNFeedTaskLoadMore getInstance(int taskCode) {
         synchronized (HNFeedTaskLoadMore.class) {
             if (instance == null)
                 instance = new HNFeedTaskLoadMore(taskCode);

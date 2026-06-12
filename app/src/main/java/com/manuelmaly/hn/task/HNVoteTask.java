@@ -17,7 +17,7 @@ public class HNVoteTask extends BaseTask<Boolean> {
 
     private String mVoteURL;
 
-    private static HNVoteTask getInstance(int taskCode) {
+    public static HNVoteTask getInstance(int taskCode) {
         synchronized (HNVoteTask.class) {
             if (instance == null)
                 instance = new HNVoteTask(taskCode);

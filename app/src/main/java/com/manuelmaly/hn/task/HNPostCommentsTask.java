@@ -36,7 +36,7 @@ public class HNPostCommentsTask extends BaseTask<HNPostComments> {
      *
      * @return
      */
-    private static HNPostCommentsTask getInstance(String postID, int taskCode) {
+    public static HNPostCommentsTask getInstance(String postID, int taskCode) {
         synchronized (HNPostCommentsTask.class) {
             if (!runningInstances.containsKey(postID))
                 runningInstances.put(postID, new HNPostCommentsTask(postID, taskCode));

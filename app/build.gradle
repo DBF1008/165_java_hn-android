@@ -17,7 +17,24 @@ dependencies {
 
     implementation "cz.msebera.android:httpclient:4.5.8"
 
+    // ViewModel + LiveData
+    implementation "androidx.lifecycle:lifecycle-viewmodel:2.5.1"
+    implementation "androidx.lifecycle:lifecycle-livedata:2.5.1"
+    implementation "androidx.lifecycle:lifecycle-runtime:2.5.1"
+
     implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // 单元测试
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.mockito:mockito-core:4.11.0"
+    testImplementation "androidx.arch.core:core-testing:2.1.0"
+
+    // 仪器测试
+    androidTestImplementation "androidx.test:runner:1.5.2"
+    androidTestImplementation "androidx.test:rules:1.5.0"
+    androidTestImplementation "androidx.test.espresso:espresso-core:3.5.1"
+    androidTestImplementation "androidx.test.espresso:espresso-contrib:3.5.1"
+    androidTestImplementation "androidx.fragment:fragment-testing:1.5.5"
 }
 
 android {
@@ -32,6 +49,7 @@ android {
         targetSdkVersion 33
         versionCode 26
         versionName "1.9.16"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
