@@ -17,7 +17,7 @@
             android:layout_height="match_parent"
             android:background="@color/peach"
             android:cacheColorHint="@color/peach"
-            android:divider="#f0dfce"
+            android:divider="@color/list_divider"
             android:dividerHeight="1dp"
             android:fadingEdge="none" />
 
@@ -30,7 +30,7 @@
         android:background="@color/peach"
         android:gravity="center"
         android:text="@string/loading"
-        android:textColor="#c3b5a7"
+        android:textColor="@color/loading_text"
         android:textSize="26sp" >
     </TextView>
 

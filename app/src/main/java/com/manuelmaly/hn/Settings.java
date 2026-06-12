@@ -12,6 +12,7 @@ public class Settings {
     public static final String PREF_USER = "pref_user";
     public static final String PREF_REPORTING = "pref_crashlytics";
     public static final String PREF_PULLDOWNREFRESH = "pref_pulldownrefresh";
+    public static final String PREF_DARKMODE = "pref_darkmode";
     
     public static final String USER_DATA_SEPARATOR = ":";
     
@@ -33,6 +34,12 @@ public class Settings {
     public static boolean isPullDownRefresh(Context c) {
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(c);
         return sharedPref.getBoolean(PREF_PULLDOWNREFRESH, false);
+    }
+
+    /** Stored dark-mode preference: "system" (default), "light", or "dark". */
+    public static String getDarkModeValue(Context c) {
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(c);
+        return sharedPref.getString(PREF_DARKMODE, "system");
     }
 
     public static boolean isUserLoggedIn(Context c) {

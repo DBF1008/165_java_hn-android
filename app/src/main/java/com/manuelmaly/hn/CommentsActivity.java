@@ -6,7 +6,6 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.DataSetObserver;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -48,6 +47,7 @@ import com.manuelmaly.hn.util.DisplayHelper;
 import com.manuelmaly.hn.util.FileUtil;
 import com.manuelmaly.hn.util.FontHelper;
 import com.manuelmaly.hn.util.SpotlightActivity;
+import com.manuelmaly.hn.util.ThemeHelper;
 import com.manuelmaly.hn.util.ViewedUtils;
 
 import org.androidannotations.annotations.AfterViews;
@@ -680,8 +680,10 @@ public class CommentsActivity extends BaseListActivity implements
         public void setComment(HNComment comment, int commentLevelIndentPx,
                 Context c, int commentTextSize, int metadataTextSize) {
             textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, commentTextSize);
-            textView.setTextColor(comment.getColor());
-            textView.setLinkTextColor(comment.getColor());
+            boolean night = ThemeHelper.isNightMode(c);
+            int commentColor = night ? ThemeHelper.commentColorForNight(comment.getColor()) : comment.getColor();
+            textView.setTextColor(commentColor);
+            textView.setLinkTextColor(commentColor);
             textView.setText(Html.fromHtml(comment.getText()));
             textView.setMovementMethod(LinkMovementMethod.getInstance());
             authorView.setTextSize(TypedValue.COMPLEX_UNIT_DIP,
@@ -705,8 +707,7 @@ public class CommentsActivity extends BaseListActivity implements
                 View spacer = new View(c);
                 spacer.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
                         commentLevelIndentPx, LayoutParams.MATCH_PARENT));
-                int spacerAlpha = Math.max(70 - i * 10, 10);
-                spacer.setBackgroundColor(Color.argb(spacerAlpha, 0, 0, 0));
+                spacer.setBackgroundColor(ThemeHelper.commentSpacerColor(i, night));
                 spacersContainer.addView(spacer, i);
             }
         }

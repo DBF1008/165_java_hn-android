@@ -41,7 +41,7 @@
         android:layout_height="fill_parent"
         android:background="@color/peach"
         android:cacheColorHint="@color/peach"
-        android:divider="#f0dfce"
+        android:divider="@color/list_divider"
         android:dividerHeight="1dp"
         android:fadingEdge="none" />
 

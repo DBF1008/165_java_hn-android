@@ -51,7 +51,7 @@
                 android:layout_below="@+id/comments_list_item_author"
                 android:layout_marginTop="10dp"
                 android:text="@string/no_topic"
-                android:textColor="#262321"
+                android:textColor="@color/comment_text_default"
                 android:textSize="16sp" />
         </RelativeLayout>
     </LinearLayout>

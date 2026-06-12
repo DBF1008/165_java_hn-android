@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Surfaces & brand. Overridden in values-night/colors.xml for dark mode. -->
     <color name="peach">#ffeddb</color>
     <color name="peach_dark">#d8c9b9</color>
     <color name="red_dark">#871f08</color>
@@ -10,4 +11,17 @@
     <color name="gray_post_title_read">#9a8e86</color>
     <color name="gray_article_title">#797979</color>
     <color name="gray_action_clicked">#979797</color>
+
+    <!-- Named colors extracted from layouts so they can be themed in dark mode. -->
+    <color name="list_divider">#f0dfce</color>
+    <color name="loading_text">#c3b5a7</color>
+    <color name="post_meta">#787067</color>
+    <color name="list_item_alt_bg">#fbe9d8</color>
+    <color name="bubble_text">#716961</color>
+    <color name="loadmore_bg">#c3b5a7</color>
+    <color name="loadmore_text">#ffeddb</color>
+    <color name="comment_text_default">#262321</color>
+    <color name="settings_text">#000000</color>
+    <color name="settings_summary">#313031</color>
+    <color name="webview_bg">#ffffff</color>
 </resources>

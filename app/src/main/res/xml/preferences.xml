@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
     <ListPreference
+        android:key="pref_darkmode"
+        android:title="@string/pref_title_darkmode"
+        android:dialogTitle="@string/pref_title_darkmode"
+        android:entries="@array/pref_array_darkmode_entries"
+        android:entryValues="@array/pref_array_darkmode_values"
+        android:defaultValue="system" />
+    <ListPreference
         android:key="pref_fontsize"
         android:title="@string/pref_title_fontsize"
         android:dialogTitle="@string/pref_title_fontsize"

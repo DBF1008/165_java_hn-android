@@ -11,6 +11,8 @@ import android.os.Looper;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.MenuItemCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -24,6 +26,7 @@ import android.widget.TextView;
 import com.manuelmaly.hn.model.HNPost;
 import com.manuelmaly.hn.util.FontHelper;
 import com.manuelmaly.hn.util.SpotlightActivity;
+import com.manuelmaly.hn.util.ThemeHelper;
 import com.manuelmaly.hn.util.ViewedUtils;
 
 import org.androidannotations.annotations.AfterViews;
@@ -86,6 +89,15 @@ public class ArticleReaderActivity extends AppCompatActivity {
     mWebView.getSettings().setUseWideViewPort( true );
     mWebView.getSettings().setJavaScriptEnabled( true );
     mWebView.setWebViewClient( new HNReaderWebViewClient() );
+
+    // Render remote article content in dark when the app is in night mode. This respects
+    // the DayNight theme, so it only darkens in night; it's a no-op on older WebViews.
+    if (WebViewFeature.isFeatureSupported( WebViewFeature.ALGORITHMIC_DARKENING )) {
+      WebSettingsCompat.setAlgorithmicDarkeningAllowed( mWebView.getSettings(), true );
+    }
+    if (ThemeHelper.isNightMode( this )) {
+      mWebView.setBackgroundColor( getResources().getColor( R.color.webview_bg ) );
+    }
 
     if (mWebViewSavedState != null) {
       mWebView.restoreState( mWebViewSavedState );

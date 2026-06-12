@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark-mode variant of the article reader's "bright" action bar. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android" >
+
+    <item>
+        <shape>
+            <gradient
+                android:angle="270"
+                android:endColor="#1a1a1a"
+                android:startColor="#2b2b2b" />
+
+            <padding android:top="1dp" android:bottom="1dp"/>
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle" >
+            <gradient
+                android:angle="270"
+                android:endColor="#1c1c1c"
+                android:startColor="#242424" />
+        </shape>
+    </item>
+    <item>
+        <bitmap
+            android:src="@drawable/transparent_noise"
+            android:tileMode="repeat" />
+    </item>
+
+</layer-list>

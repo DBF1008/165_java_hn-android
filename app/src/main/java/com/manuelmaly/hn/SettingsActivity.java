@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener;
 import android.os.Bundle;
 import android.os.Message;
+import android.preference.ListPreference;
 import android.preference.Preference;
 import android.preference.Preference.OnPreferenceClickListener;
 import android.preference.PreferenceActivity;
@@ -15,9 +16,12 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.ImageView;
 
+import androidx.appcompat.app.AppCompatDelegate;
+
 import com.manuelmaly.hn.login.LoginActivity_;
 import com.manuelmaly.hn.server.HNCredentials;
 import com.manuelmaly.hn.util.Run;
+import com.manuelmaly.hn.util.ThemeHelper;
 
 public class SettingsActivity extends PreferenceActivity implements OnSharedPreferenceChangeListener {
 
@@ -56,6 +60,9 @@ public class SettingsActivity extends PreferenceActivity implements OnSharedPref
         Preference htmlViewerPref = findPreference(Settings.PREF_HTMLVIEWER);
         htmlViewerPref.setSummary(sharedPref.getString(Settings.PREF_HTMLVIEWER, "Undefined"));
 
+        ListPreference darkModePref = (ListPreference) findPreference(Settings.PREF_DARKMODE);
+        darkModePref.setSummary(darkModePref.getEntry());
+
         mUserPref= (UserPreference) findPreference(Settings.PREF_USER);
         mUserPref.setOnPreferenceClickListener(new OnPreferenceClickListener() {
             @Override
@@ -90,6 +97,13 @@ public class SettingsActivity extends PreferenceActivity implements OnSharedPref
                 if (key.equals(Settings.PREF_FONTSIZE) || key.equals(Settings.PREF_HTMLPROVIDER)
                     || key.equals(Settings.PREF_HTMLVIEWER))
                     findPreference(key).setSummary(sharedPreferences.getString(key, "Undefined"));
+                else if (key.equals(Settings.PREF_DARKMODE)) {
+                    ListPreference darkModePref = (ListPreference) findPreference(key);
+                    darkModePref.setSummary(darkModePref.getEntry());
+                    AppCompatDelegate.setDefaultNightMode(ThemeHelper.nightModeForValue(
+                            sharedPreferences.getString(key, ThemeHelper.VALUE_SYSTEM)));
+                    recreate();
+                }
                 else if (key.equals(Settings.PREF_USER)) {
                     HNCredentials.invalidate();
                     updateUserItem();

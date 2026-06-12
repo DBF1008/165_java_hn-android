@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="ActionBar" parent="Theme.AppCompat">
+    <style name="ActionBar" parent="Theme.AppCompat.DayNight">
         <item name="android:actionOverflowButtonStyle">@style/OverflowIconStyle</item>
         <item name="actionOverflowButtonStyle">@style/OverflowIconStyle</item>
         <item name="android:homeAsUpIndicator">@drawable/back</item>
@@ -25,5 +25,12 @@
         <item name="actionBarStyle">@style/ActionBarStyle.Back.White</item>
         <item name="android:actionBarItemBackground">@drawable/actionbar_button_bg_gray</item>
         <item name="actionBarItemBackground">@drawable/actionbar_button_bg_gray</item>
+    </style>
+
+    <!-- Settings screen (a framework PreferenceActivity). DayNight so the
+         preference list text follows light/dark; the screen draws its own
+         action bar via settings.xml, hence NoActionBar. -->
+    <style name="SettingsTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/peach</item>
     </style>
 </resources>

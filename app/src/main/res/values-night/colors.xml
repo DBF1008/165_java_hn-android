@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dark-mode color overrides. Applied automatically when the device/app is in
+  night mode (system follow or manual Dark in Settings). Any color NOT listed
+  here falls back to values/colors.xml (e.g. the brand orange action bar, which
+  we intentionally keep in both modes, and bubble_text which sits on a light
+  comment-count bubble in both modes).
+-->
+<resources>
+    <!-- Surfaces -->
+    <color name="peach">#121212</color>
+    <color name="peach_dark">#2a2a2a</color>
+
+    <!-- Post list -->
+    <color name="dark_gray_post_title">#ececec</color>
+    <color name="gray_post_title_read">#6f6f6f</color>
+    <color name="post_meta">#9a9a9a</color>
+    <color name="list_divider">#2a2a2a</color>
+    <color name="loading_text">#8a8a8a</color>
+    <color name="list_item_alt_bg">#1c1c1c</color>
+    <color name="loadmore_bg">#2a2a2a</color>
+    <color name="loadmore_text">#ececec</color>
+
+    <!-- Comments -->
+    <color name="gray_comments_information">#9a9a9a</color>
+    <color name="gray_comments_divider">#333333</color>
+    <color name="comment_text_default">#ececec</color>
+
+    <!-- Article reader -->
+    <color name="gray_article_title">#d0d0d0</color>
+    <color name="gray_action_clicked">#555555</color>
+    <color name="webview_bg">#121212</color>
+
+    <!-- Settings -->
+    <color name="settings_text">#ececec</color>
+    <color name="settings_summary">#b0b0b0</color>
+</resources>

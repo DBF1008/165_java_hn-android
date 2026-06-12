@@ -7,4 +7,4 @@
     android:text="@string/loading"
     android:gravity="center"
     android:textSize="26sp"
-    android:textColor="#c3b5a7" />
+    android:textColor="@color/loading_text" />

@@ -51,7 +51,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".SettingsActivity"
-            android:theme="@android:style/Theme.Light.NoTitleBar"
+            android:theme="@style/SettingsTheme"
             android:configChanges="keyboardHidden|orientation|screenSize">
         </activity>
         <activity android:name=".AboutActivity_"

@@ -2,7 +2,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="fill_parent"
     android:layout_height="fill_parent"
-    android:background="#c3b5a7"
+    android:background="@color/loadmore_bg"
     android:minHeight="64dp" >
 
     <TextView
@@ -13,7 +13,7 @@
         android:text="@string/load_more"
         android:textSize="24sp"
         android:textStyle="bold"
-        android:textColor="#ffeddb" />
+        android:textColor="@color/loadmore_text" />
 
     <ImageView
         android:id="@+id/main_list_item_loadmore_loadingimage"

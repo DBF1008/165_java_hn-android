@@ -40,4 +40,22 @@
     <string name="pref_title_pulldownrefresh">Pull Down to Refresh</string>
     <bool name="pref_default_pulldownrefresh">false</bool>
 
+    <string name="pref_title_darkmode">Dark Mode</string>
+    <string name="pref_darkmode_system">Follow system</string>
+    <string name="pref_darkmode_light">Light</string>
+    <string name="pref_darkmode_dark">Dark</string>
+
+    <string-array name="pref_array_darkmode_entries">
+        <item>@string/pref_darkmode_system</item>
+        <item>@string/pref_darkmode_light</item>
+        <item>@string/pref_darkmode_dark</item>
+    </string-array>
+
+    <!-- Stored values map to ThemeHelper.VALUE_*; keep stable and untranslated. -->
+    <string-array name="pref_array_darkmode_values" translatable="false">
+        <item>system</item>
+        <item>light</item>
+        <item>dark</item>
+    </string-array>
+
 </resources>
