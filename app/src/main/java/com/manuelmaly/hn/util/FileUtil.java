@@ -54,6 +54,14 @@ public class FileUtil {
         return null;
     }
 
+    /**
+     * Synchronous read of the cached main feed, for callers that already run on a
+     * background thread (e.g. the repository layer). Returns null if none.
+     */
+    public static HNFeed getLastHNFeedBlocking() {
+        return getLastHNFeed();
+    }
+
     public static void setLastHNFeed(final HNFeed hnFeed) {
         Run.inBackground(new Runnable() {
             public void run() {
@@ -112,6 +120,14 @@ public class FileUtil {
             }
         }
         return null;
+    }
+
+    /**
+     * Synchronous read of cached comments for the given post, for background
+     * callers (e.g. the repository layer). Returns null if none.
+     */
+    public static HNPostComments getLastHNPostCommentsBlocking(String postID) {
+        return getLastHNPostComments(postID);
     }
 
     public static void setLastHNPostComments(final HNPostComments comments, final String postID) {

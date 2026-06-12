@@ -15,9 +15,18 @@ dependencies {
     implementation "androidx.appcompat:appcompat:1.5.1"
     implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
 
+    // MVVM: ViewModel + LiveData (matches the appcompat 1.5.x / core 1.9.x train).
+    implementation "androidx.lifecycle:lifecycle-viewmodel:2.5.1"
+    implementation "androidx.lifecycle:lifecycle-livedata:2.5.1"
+    implementation "androidx.lifecycle:lifecycle-runtime:2.5.1"
+
     implementation "cz.msebera.android:httpclient:4.5.8"
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // Pure-JVM unit tests for ViewModels/repositories.
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "androidx.arch.core:core-testing:2.2.0"
 }
 
 android {
@@ -25,6 +34,12 @@ android {
         encoding "UTF-8"
     }
     compileSdkVersion 33
+
+    testOptions {
+        // Let JVM unit tests run without an emulator; android.* calls not under
+        // InstantTaskExecutorRule return defaults instead of throwing.
+        unitTests.returnDefaultValues = true
+    }
 
     defaultConfig {
         applicationId "com.manuelmaly.hn"

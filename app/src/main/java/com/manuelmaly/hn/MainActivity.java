@@ -1,51 +1,38 @@
 package com.manuelmaly.hn;
 
+import com.manuelmaly.hn.data.Resource;
 import com.manuelmaly.hn.model.HNFeed;
 import com.manuelmaly.hn.model.HNPost;
-import com.manuelmaly.hn.parser.BaseHTMLParser;
 import com.manuelmaly.hn.server.HNCredentials;
-import com.manuelmaly.hn.task.HNFeedTaskLoadMore;
-import com.manuelmaly.hn.task.HNFeedTaskMainFeed;
-import com.manuelmaly.hn.task.HNVoteTask;
-import com.manuelmaly.hn.task.ITaskFinishedHandler;
-import com.manuelmaly.hn.util.FileUtil;
+import com.manuelmaly.hn.ui.PostsAdapter;
 import com.manuelmaly.hn.util.FontHelper;
+import com.manuelmaly.hn.viewmodel.HNViewModelFactory;
+import com.manuelmaly.hn.viewmodel.MainViewModel;
 
 import org.androidannotations.annotations.AfterViews;
-import org.androidannotations.annotations.Background;
 import org.androidannotations.annotations.EActivity;
 import org.androidannotations.annotations.SystemService;
 import org.androidannotations.annotations.ViewById;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.ProgressDialog;
-import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.content.SharedPreferences.Editor;
-import android.database.DataSetObserver;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Parcelable;
 
 import androidx.core.view.MenuItemCompat;
+import androidx.lifecycle.Observer;
+import androidx.lifecycle.ViewModelProvider;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
-import android.util.Log;
-import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.View.OnClickListener;
-import android.view.View.OnLongClickListener;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
-import android.widget.BaseAdapter;
-import android.widget.Button;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListAdapter;
 import android.widget.ListView;
@@ -55,14 +42,17 @@ import android.widget.Toast;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
 
+/**
+ * Feed screen. Following the MVVM refactor this is a thin view: list rendering
+ * lives in {@link PostsAdapter} and all data processing (loading, load-more,
+ * voting, read-state, caching) lives in {@link MainViewModel}, observed here via
+ * LiveData. The Activity only wires views, forwards user intents, and keeps the
+ * inherently framework-bound pieces (the long-press menu, share/browser intents,
+ * the refresh chrome and list-scroll restore).
+ */
 @EActivity(R.layout.main)
-public class MainActivity extends BaseListActivity implements
-        ITaskFinishedHandler<HNFeed> {
+public class MainActivity extends BaseListActivity implements PostsAdapter.Host {
 
     @ViewById(R.id.main_list)
     ListView mPostsList;
@@ -77,10 +67,8 @@ public class MainActivity extends BaseListActivity implements
     LayoutInflater mInflater;
 
     TextView mEmptyListPlaceholder;
-    HNFeed mFeed;
     PostsAdapter mPostsListAdapter;
-    Set<HNPost> mUpvotedPosts;
-    Set<Integer> mAlreadyRead;
+    MainViewModel mViewModel;
 
     String mCurrentFontSize = null;
     int mFontSizeTitle;
@@ -88,12 +76,8 @@ public class MainActivity extends BaseListActivity implements
     int mTitleColor;
     int mTitleReadColor;
 
-    private static final int TASKCODE_LOAD_FEED = 10;
-    private static final int TASKCODE_LOAD_MORE_POSTS = 20;
-    private static final int TASKCODE_VOTE = 100;
-
     private static final String LIST_STATE = "listState";
-    private static final String ALREADY_READ_ARTICLES_KEY = "HN_ALREADY_READ";
+    private static final String HACKERNEWS_URLDOMAIN = "news.ycombinator.com";
     private Parcelable mListState = null;
 
     boolean mShouldShowRefreshing = false;
@@ -123,45 +107,87 @@ public class MainActivity extends BaseListActivity implements
 
     @AfterViews
     public void init() {
-        mFeed = new HNFeed(new ArrayList<HNPost>(), null, "");
-        mPostsListAdapter = new PostsAdapter();
-        mUpvotedPosts = new HashSet<HNPost>();
+        HNViewModelFactory factory = new HNViewModelFactory(getApplicationContext());
+        mViewModel = new ViewModelProvider(this, factory).get(MainViewModel.class);
+
+        mPostsListAdapter = new PostsAdapter(this, this);
 
         mEmptyListPlaceholder = getEmptyTextView(mRootView);
         mPostsList.setEmptyView(mEmptyListPlaceholder);
         mPostsList.setAdapter(mPostsListAdapter);
-
         mEmptyListPlaceholder.setTypeface(FontHelper.getComfortaa(this, true));
 
         mTitleColor = getResources().getColor(R.color.dark_gray_post_title);
         mTitleReadColor = getResources().getColor(R.color.gray_post_title_read);
+        refreshFontSizes();
 
         toggleSwipeRefreshLayout();
-
         mSwipeRefreshLayout.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
             @Override
             public void onRefresh() {
-                startFeedLoading();
+                mViewModel.loadFeed();
             }
         });
 
-        loadAlreadyReadCache();
-        loadIntermediateFeedFromStore();
-        startFeedLoading();
+        observeViewModel();
+
+        mViewModel.loadAlreadyRead();
+        mViewModel.loadCached(Settings.getUserName(this));
+        mViewModel.loadFeed();
+    }
+
+    private void observeViewModel() {
+        mViewModel.getFeed().observe(this, new Observer<Resource<HNFeed>>() {
+            @Override
+            public void onChanged(Resource<HNFeed> resource) {
+                mPostsListAdapter.notifyDataSetChanged();
+            }
+        });
+        mViewModel.getRefreshing().observe(this, new Observer<Boolean>() {
+            @Override
+            public void onChanged(Boolean refreshing) {
+                setShowRefreshing(Boolean.TRUE.equals(refreshing));
+            }
+        });
+        mViewModel.getLoadMoreInFlight().observe(this, new Observer<Boolean>() {
+            @Override
+            public void onChanged(Boolean inFlight) {
+                // Re-render so the load-more row reflects the new in-flight state.
+                mPostsListAdapter.notifyDataSetChanged();
+            }
+        });
+        mViewModel.getVoteEvent().observe(this, new Observer<Boolean>() {
+            @Override
+            public void onChanged(Boolean success) {
+                if (Boolean.TRUE.equals(success)) {
+                    Toast.makeText(MainActivity.this, R.string.vote_success, Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(MainActivity.this, R.string.vote_error, Toast.LENGTH_LONG).show();
+                }
+            }
+        });
+        mViewModel.getErrorMessage().observe(this, new Observer<Integer>() {
+            @Override
+            public void onChanged(Integer messageResId) {
+                if (messageResId != null) {
+                    Toast.makeText(MainActivity.this, messageResId, Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
     }
 
     @Override
     protected void onResume() {
         super.onResume();
 
-        boolean registeredUserChanged = mFeed.getUserAcquiredFor() != null
-                && (!mFeed.getUserAcquiredFor().equals(
-                        Settings.getUserName(this)));
+        HNFeed feed = mViewModel.currentFeed();
+        boolean registeredUserChanged = feed != null && feed.getUserAcquiredFor() != null
+                && (!feed.getUserAcquiredFor().equals(Settings.getUserName(this)));
 
         // We want to reload the feed if a new user logged in
         if (HNCredentials.isInvalidated() || registeredUserChanged) {
-            showFeed(new HNFeed(new ArrayList<HNPost>(), null, ""));
-            startFeedLoading();
+            mViewModel.resetFeed();
+            mViewModel.loadFeed();
         }
 
         // refresh if font size changed
@@ -209,7 +235,7 @@ public class MainActivity extends BaseListActivity implements
             startActivity(new Intent(MainActivity.this, AboutActivity_.class));
             return true;
         case R.id.menu_refresh:
-            startFeedLoading();
+            mViewModel.loadFeed();
             return true;
         default:
             return super.onOptionsItemSelected(item);
@@ -220,113 +246,73 @@ public class MainActivity extends BaseListActivity implements
         mSwipeRefreshLayout.setEnabled(Settings.isPullDownRefresh(MainActivity.this));
     }
 
+    // --- PostsAdapter.Host -------------------------------------------------
+
     @Override
-    public void onTaskFinished(int taskCode, TaskResultCode code,
-            HNFeed result, Object tag) {
-        if (taskCode == TASKCODE_LOAD_FEED) {
-            if (code.equals(TaskResultCode.Success)
-                    && mPostsListAdapter != null) {
-                showFeed(result);
-            } else
-                if (!code.equals(TaskResultCode.Success)) {
-                    Toast.makeText(this,
-                            getString(R.string.error_unable_to_retrieve_feed),
-                            Toast.LENGTH_SHORT).show();
-                }
-        } else
-            if (taskCode == TASKCODE_LOAD_MORE_POSTS) {
-                if (!code.equals(TaskResultCode.Success) || result == null || result.getPosts() == null || result.getPosts().size() == 0) {
-                    Toast.makeText(this,
-                            getString(R.string.error_unable_to_load_more),
-                            Toast.LENGTH_SHORT).show();
-                  mFeed.setLoadedMore(true); // reached the end.
-                }
-
-                mFeed.appendLoadMoreFeed(result);
-                mPostsListAdapter.notifyDataSetChanged();
-            }
-
-        setShowRefreshing(false);
+    public HNFeed getFeed() {
+        return mViewModel.currentFeed();
     }
 
-    @Background
-    void loadAlreadyReadCache() {
-        if (mAlreadyRead == null) {
-            mAlreadyRead = new HashSet<Integer>();
-        }
-
-        SharedPreferences sharedPref = getSharedPreferences(
-                ALREADY_READ_ARTICLES_KEY, Context.MODE_PRIVATE);
-        Editor editor = sharedPref.edit();
-        Map<String, ?> read = sharedPref.getAll();
-        Long now = new Date().getTime();
-
-        for (Map.Entry<String, ?> entry : read.entrySet()) {
-            Long readAt = (Long) entry.getValue();
-            Long diff = (now - readAt) / (24 * 60 * 60 * 1000);
-            if (diff >= 2) {
-                editor.remove(entry.getKey());
-            } else {
-                mAlreadyRead.add(entry.getKey().hashCode());
-            }
-        }
-        editor.commit();
+    @Override
+    public boolean isRead(HNPost post) {
+        return mViewModel.isRead(post);
     }
 
-    @Background
-    void markAsRead(HNPost post) {
-        Long now = new Date().getTime();
-        String title = post.getTitle();
-        Editor editor = getSharedPreferences(ALREADY_READ_ARTICLES_KEY,
-                Context.MODE_PRIVATE).edit();
-        editor.putLong(title, now);
-        editor.commit();
-
-        mAlreadyRead.add(title.hashCode());
+    @Override
+    public boolean isLoadMoreInFlight() {
+        return Boolean.TRUE.equals(mViewModel.getLoadMoreInFlight().getValue());
     }
 
-    private void showFeed(HNFeed feed) {
-        mFeed = feed;
-        mPostsListAdapter.notifyDataSetChanged();
+    @Override
+    public int getFontSizeTitle() {
+        return mFontSizeTitle;
     }
 
-    private void loadIntermediateFeedFromStore() {
-        new GetLastHNFeedTask().execute((Void) null);
-        long start = System.currentTimeMillis();
-
-        Log.i("",
-                "Loading intermediate feed took ms:"
-                        + (System.currentTimeMillis() - start));
+    @Override
+    public int getFontSizeDetails() {
+        return mFontSizeDetails;
     }
 
-    class GetLastHNFeedTask extends FileUtil.GetLastHNFeedTask {
-        ProgressDialog progress;
+    @Override
+    public int getTitleColor() {
+        return mTitleColor;
+    }
 
-        @Override
-        protected void onPreExecute() {
-            progress = new ProgressDialog(MainActivity.this);
-            progress.setMessage("Loading");
-            progress.show();
-        }
+    @Override
+    public int getTitleReadColor() {
+        return mTitleReadColor;
+    }
 
-        @Override
-        protected void onPostExecute(HNFeed result) {
-            if (progress != null && progress.isShowing()) {
-                progress.dismiss();
-            }
+    @Override
+    public void onOpenComments(HNPost post) {
+        Intent i = new Intent(MainActivity.this, CommentsActivity_.class);
+        i.putExtra(CommentsActivity.EXTRA_HNPOST, post);
+        startActivity(i);
+    }
 
-            if (result != null
-                    && result.getUserAcquiredFor() != null
-                    && result.getUserAcquiredFor().equals(
-                            Settings.getUserName(App.getInstance()))) {
-                showFeed(result);
-            }
+    @Override
+    public void onPostClicked(HNPost post) {
+        mViewModel.markRead(post);
+        if (post.getURLDomain().equals(HACKERNEWS_URLDOMAIN)) {
+            onOpenComments(post);
+        } else if (Settings.getHtmlViewer(MainActivity.this).equals(
+                getString(R.string.pref_htmlviewer_browser))) {
+            openURLInBrowser(getArticleViewURL(post), MainActivity.this);
+        } else {
+            openPostInApp(post, null, MainActivity.this);
         }
     }
 
-    private void startFeedLoading() {
-        setShowRefreshing(true);
-        HNFeedTaskMainFeed.startOrReattach(this, this, TASKCODE_LOAD_FEED);
+    @Override
+    public void onLongPress(HNPost post) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+        LongPressMenuListAdapter adapter = new LongPressMenuListAdapter(post);
+        builder.setAdapter(adapter, adapter).show();
+    }
+
+    @Override
+    public void onLoadMore() {
+        mViewModel.loadMore();
     }
 
     private boolean refreshFontSizes() {
@@ -350,11 +336,6 @@ public class MainActivity extends BaseListActivity implements
         }
     }
 
-    private void vote(String voteURL, HNPost post) {
-        HNVoteTask.start(voteURL, MainActivity.this,
-                new VoteTaskFinishedHandler(), TASKCODE_VOTE, post);
-    }
-
     @Override
     protected void onRestoreInstanceState(Bundle state) {
         super.onRestoreInstanceState(state);
@@ -366,217 +347,6 @@ public class MainActivity extends BaseListActivity implements
         super.onSaveInstanceState(state);
         mListState = mPostsList.onSaveInstanceState();
         state.putParcelable(LIST_STATE, mListState);
-    }
-
-    class VoteTaskFinishedHandler implements ITaskFinishedHandler<Boolean> {
-        @Override
-        public void onTaskFinished(
-                int taskCode,
-                com.manuelmaly.hn.task.ITaskFinishedHandler.TaskResultCode code,
-                Boolean result, Object tag) {
-            if (taskCode == TASKCODE_VOTE) {
-                if (result != null && result.booleanValue()) {
-                    Toast.makeText(MainActivity.this, R.string.vote_success,
-                            Toast.LENGTH_SHORT).show();
-                    HNPost post = (HNPost) tag;
-                    if (post != null) {
-                        mUpvotedPosts.add(post);
-                    }
-                } else {
-                    Toast.makeText(MainActivity.this, R.string.vote_error,
-                            Toast.LENGTH_LONG).show();
-                }
-            }
-        }
-    }
-
-    class PostsAdapter extends BaseAdapter {
-
-        private static final int VIEWTYPE_POST = 0;
-        private static final int VIEWTYPE_LOADMORE = 1;
-        private static final String HACKERNEWS_URLDOMAIN = "news.ycombinator.com";
-
-        @Override
-        public int getCount() {
-            int posts = mFeed.getPosts().size();
-            if (posts == 0) {
-                return 0;
-            } else {
-                return posts + (mFeed.isLoadedMore() ? 0 : 1);
-            }
-        }
-
-        @Override
-        public HNPost getItem(int position) {
-            if (getItemViewType(position) == VIEWTYPE_POST) {
-                return mFeed.getPosts().get(position);
-            } else {
-                return null;
-            }
-        }
-
-        @Override
-        public long getItemId(int position) {
-            // Item ID not needed here:
-            return 0;
-        }
-
-        @Override
-        public int getItemViewType(int position) {
-            if (position < mFeed.getPosts().size()) {
-                return VIEWTYPE_POST;
-            } else {
-                return VIEWTYPE_LOADMORE;
-            }
-        }
-
-        @Override
-        public int getViewTypeCount() {
-            return 2;
-        }
-
-        @Override
-        public View getView(final int position, View convertView,
-                ViewGroup parent) {
-            switch (getItemViewType(position)) {
-            case VIEWTYPE_POST:
-                if (convertView == null) {
-                    convertView = mInflater.inflate(R.layout.main_list_item,
-                            null);
-                    PostViewHolder holder = new PostViewHolder();
-                    holder.titleView = (TextView) convertView
-                            .findViewById(R.id.main_list_item_title);
-                    holder.urlView = (TextView) convertView
-                            .findViewById(R.id.main_list_item_url);
-                    holder.textContainer = (LinearLayout) convertView
-                            .findViewById(R.id.main_list_item_textcontainer);
-                    holder.commentsButton = (Button) convertView
-                            .findViewById(R.id.main_list_item_comments_button);
-                    holder.commentsButton.setTypeface(FontHelper.getComfortaa(
-                            MainActivity.this, false));
-                    holder.pointsView = (TextView) convertView
-                            .findViewById(R.id.main_list_item_points);
-                    holder.pointsView.setTypeface(FontHelper.getComfortaa(
-                            MainActivity.this, true));
-                    convertView.setTag(holder);
-                }
-
-                final HNPost item = getItem(position);
-                PostViewHolder holder = (PostViewHolder) convertView.getTag();
-                holder.titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP,
-                        mFontSizeTitle);
-                holder.titleView.setText(item.getTitle());
-                holder.titleView.setTextColor(isRead(item) ? mTitleReadColor
-                        : mTitleColor);
-                holder.urlView.setTextSize(TypedValue.COMPLEX_UNIT_DIP,
-                        mFontSizeDetails);
-                holder.urlView.setText(item.getURLDomain());
-                holder.pointsView.setTextSize(TypedValue.COMPLEX_UNIT_DIP,
-                        mFontSizeDetails);
-                if (item.getPoints() != BaseHTMLParser.UNDEFINED) {
-                    holder.pointsView.setText(item.getPoints() + "");
-                } else {
-                    holder.pointsView.setText("-");
-                }
-
-                holder.commentsButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP,
-                        mFontSizeTitle);
-                if (item.getCommentsCount() != BaseHTMLParser.UNDEFINED) {
-                    holder.commentsButton.setVisibility(View.VISIBLE);
-                    holder.commentsButton.setText(item.getCommentsCount() + "");
-                } else {
-                    holder.commentsButton.setVisibility(View.INVISIBLE);
-                }
-                holder.commentsButton.setOnClickListener(new OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        startCommentActivity(position);
-                    }
-                });
-                holder.textContainer.setOnClickListener(new OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        markAsRead(item);
-                        if(getItem(position).getURLDomain().equals(HACKERNEWS_URLDOMAIN)){
-                            startCommentActivity(position);
-                        }
-                        else  if (Settings.getHtmlViewer(MainActivity.this).equals(
-                                getString(R.string.pref_htmlviewer_browser))) {
-                            openURLInBrowser(
-                                    getArticleViewURL(getItem(position)),
-                                    MainActivity.this);
-                        } else {
-                            openPostInApp(getItem(position), null,
-                                    MainActivity.this);
-                        }
-                    }
-                });
-                holder.textContainer
-                        .setOnLongClickListener(new OnLongClickListener() {
-                            @Override
-                            public boolean onLongClick(View v) {
-                                final HNPost post = getItem(position);
-
-                                AlertDialog.Builder builder = new AlertDialog.Builder(
-                                        MainActivity.this);
-                                LongPressMenuListAdapter adapter = new LongPressMenuListAdapter(
-                                        post);
-                                builder.setAdapter(adapter, adapter).show();
-                                return true;
-                            }
-                        });
-                break;
-
-            case VIEWTYPE_LOADMORE:
-                // I don't use the preloaded convertView here because it's
-                // only one cell
-                convertView = mInflater.inflate(
-                        R.layout.main_list_item_loadmore, null);
-                final TextView textView = (TextView) convertView
-                        .findViewById(R.id.main_list_item_loadmore_text);
-                textView.setTypeface(FontHelper.getComfortaa(MainActivity.this,
-                        true));
-                final ImageView imageView = (ImageView) convertView
-                        .findViewById(R.id.main_list_item_loadmore_loadingimage);
-                if (HNFeedTaskLoadMore.isRunning(MainActivity.this,
-                        TASKCODE_LOAD_MORE_POSTS)) {
-                    textView.setVisibility(View.INVISIBLE);
-                    imageView.setVisibility(View.VISIBLE);
-                    convertView.setClickable(false);
-                }
-
-                final View convertViewFinal = convertView;
-                convertView.setOnClickListener(new OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        textView.setVisibility(View.INVISIBLE);
-                        imageView.setVisibility(View.VISIBLE);
-                        convertViewFinal.setClickable(false);
-                        HNFeedTaskLoadMore.start(MainActivity.this,
-                                MainActivity.this, mFeed,
-                                TASKCODE_LOAD_MORE_POSTS);
-                        setShowRefreshing(true);
-                    }
-                });
-                break;
-            default:
-                break;
-            }
-
-            return convertView;
-        }
-
-        private boolean isRead(HNPost post) {
-            return mAlreadyRead.contains(post.getTitle().hashCode());
-        }
-
-        private void startCommentActivity(int position){
-            Intent i = new Intent(MainActivity.this,
-                    CommentsActivity_.class);
-            i.putExtra(CommentsActivity.EXTRA_HNPOST,
-                    getItem(position));
-            startActivity(i);
-        }
     }
 
     private class LongPressMenuListAdapter implements ListAdapter,
@@ -591,9 +361,8 @@ public class MainActivity extends BaseListActivity implements
             mPost = post;
             mIsLoggedIn = Settings.isUserLoggedIn(MainActivity.this);
             mUpVotingEnabled = !mIsLoggedIn
-                    || (mPost.getUpvoteURL(Settings
-                            .getUserName(MainActivity.this)) != null && !mUpvotedPosts
-                            .contains(mPost));
+                    || (mPost.getUpvoteURL(Settings.getUserName(MainActivity.this)) != null
+                            && !mViewModel.isUpvoted(mPost));
 
             mItems = new ArrayList<CharSequence>();
             if (mUpVotingEnabled) {
@@ -658,11 +427,11 @@ public class MainActivity extends BaseListActivity implements
         }
 
         @Override
-        public void registerDataSetObserver(DataSetObserver observer) {
+        public void registerDataSetObserver(android.database.DataSetObserver observer) {
         }
 
         @Override
-        public void unregisterDataSetObserver(DataSetObserver observer) {
+        public void unregisterDataSetObserver(android.database.DataSetObserver observer) {
         }
 
         @Override
@@ -687,7 +456,7 @@ public class MainActivity extends BaseListActivity implements
                             Toast.LENGTH_LONG).show();
                 } else
                     if (mUpVotingEnabled) {
-                        vote(mPost.getUpvoteURL(Settings
+                        mViewModel.vote(mPost.getUpvoteURL(Settings
                                 .getUserName(MainActivity.this)), mPost);
                     }
                 break;
@@ -697,11 +466,11 @@ public class MainActivity extends BaseListActivity implements
             case 4:
                 openPostInApp(mPost, getItem(item).toString(),
                         MainActivity.this);
-                markAsRead(mPost);
+                mViewModel.markRead(mPost);
                 break;
             case 5:
                 openURLInBrowser(getArticleViewURL(mPost), MainActivity.this);
-                markAsRead(mPost);
+                mViewModel.markRead(mPost);
                 break;
             case 6:
                 shareUrl(mPost, MainActivity.this);
@@ -734,12 +503,12 @@ public class MainActivity extends BaseListActivity implements
         a.startActivity(i);
     }
 
-    public static void shareUrl(HNPost post, Activity a){
-      Intent shareIntent = new Intent(Intent.ACTION_SEND);
-      shareIntent.setType("text/plain");
-      shareIntent.putExtra(Intent.EXTRA_SUBJECT, post.getTitle());
-      shareIntent.putExtra(Intent.EXTRA_TEXT, post.getURL());
-      a.startActivity(Intent.createChooser(shareIntent, a.getString(R.string.share_article_url)));
+    public static void shareUrl(HNPost post, Activity a) {
+        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+        shareIntent.setType("text/plain");
+        shareIntent.putExtra(Intent.EXTRA_SUBJECT, post.getTitle());
+        shareIntent.putExtra(Intent.EXTRA_TEXT, post.getURL());
+        a.startActivity(Intent.createChooser(shareIntent, a.getString(R.string.share_article_url)));
     }
 
     private void setShowRefreshing(boolean showRefreshing) {
@@ -751,15 +520,6 @@ public class MainActivity extends BaseListActivity implements
         if (mSwipeRefreshLayout.isEnabled() && (!mSwipeRefreshLayout.isRefreshing() || !showRefreshing)) {
             mSwipeRefreshLayout.setRefreshing(showRefreshing);
         }
-    }
-
-    static class PostViewHolder {
-        TextView titleView;
-        TextView urlView;
-        TextView pointsView;
-        TextView commentsCountView;
-        LinearLayout textContainer;
-        Button commentsButton;
     }
 
 }
