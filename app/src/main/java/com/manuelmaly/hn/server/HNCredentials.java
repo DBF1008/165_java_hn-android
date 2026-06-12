@@ -2,45 +2,28 @@ package com.manuelmaly.hn.server;
 
 import android.content.Context;
 
-import com.manuelmaly.hn.Settings;
+import com.manuelmaly.hn.App;
 
 import cz.msebera.android.httpclient.client.CookieStore;
-import cz.msebera.android.httpclient.impl.client.BasicCookieStore;
-import cz.msebera.android.httpclient.impl.cookie.BasicClientCookie;
 
+/**
+ * Static facade over the HN authentication cookie store, kept for source
+ * compatibility. Delegates to the injectable, singleton
+ * {@link ICredentialsRepository} (which holds the shared cookie cache and
+ * invalidation state), obtained from the Dagger component.
+ */
 public class HNCredentials {
-    
-    private static CookieStore cookieStore;
-    private static boolean invalidated;
-    
-    private static final String COOKIE_USER = "user";
-    
-    public static synchronized CookieStore getCookieStore(Context c) {
-        if (cookieStore != null && !invalidated)
-            return cookieStore;
-        
-        cookieStore = new BasicCookieStore();
-        String userToken = Settings.getUserToken(c);
-        
-        if (userToken != null) {
-            BasicClientCookie cookie = new BasicClientCookie(COOKIE_USER, userToken);
-            cookie.setDomain("news.ycombinator.com");
-            cookie.setPath("/");
-            cookieStore.addCookie(cookie);
-        }
-        
-        invalidated = false;
-        
-        return cookieStore;
+
+    public static CookieStore getCookieStore(Context c) {
+        return App.component().credentialsRepository().getCookieStore();
     }
-    
+
     public static void invalidate() {
-        cookieStore = null;
-        invalidated = true;
+        App.component().credentialsRepository().invalidate();
     }
-    
+
     public static boolean isInvalidated() {
-        return invalidated;
+        return App.component().credentialsRepository().isInvalidated();
     }
-    
+
 }

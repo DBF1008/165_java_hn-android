@@ -5,14 +5,13 @@ import android.util.Log;
 
 import com.manuelmaly.hn.App;
 import com.manuelmaly.hn.model.HNPostComments;
-import com.manuelmaly.hn.parser.HNCommentsParser;
+import com.manuelmaly.hn.parser.ICommentsParser;
 import com.manuelmaly.hn.reuse.CancelableRunnable;
-import com.manuelmaly.hn.server.HNCredentials;
+import com.manuelmaly.hn.server.ApiCommandFactory;
 import com.manuelmaly.hn.server.IAPICommand;
-import com.manuelmaly.hn.server.IAPICommand.RequestType;
-import com.manuelmaly.hn.server.StringDownloadCommand;
-import com.manuelmaly.hn.util.FileUtil;
-import com.manuelmaly.hn.util.Run;
+import com.manuelmaly.hn.server.ICredentialsRepository;
+import com.manuelmaly.hn.storage.ICommentsStore;
+import com.manuelmaly.hn.util.IBackgroundExecutor;
 
 import java.util.HashMap;
 
@@ -23,23 +22,34 @@ public class HNPostCommentsTask extends BaseTask<HNPostComments> {
 
     private String mPostID; // for which post shall comments be loaded?
 
-    private HNPostCommentsTask(String postID, int taskCode) {
-        super(BROADCAST_INTENT_ID, taskCode);
+    private final ApiCommandFactory mCommandFactory;
+    private final ICommentsParser mCommentsParser;
+    private final ICommentsStore mCommentsStore;
+    private final ICredentialsRepository mCredentials;
+
+    HNPostCommentsTask(String postID, int taskCode, ApiCommandFactory commandFactory, ICommentsParser commentsParser,
+        ICommentsStore commentsStore, ICredentialsRepository credentials, IBackgroundExecutor backgroundExecutor,
+        ITaskResultPublisher publisher) {
+        super(BROADCAST_INTENT_ID, taskCode, publisher, backgroundExecutor);
         mPostID = postID;
+        mCommandFactory = commandFactory;
+        mCommentsParser = commentsParser;
+        mCommentsStore = commentsStore;
+        mCredentials = credentials;
     }
 
     /**
-     * I know, Singleton is generally a no-no, but the only other option would
-     * be to store the currently running HNPostCommentsTasks in the App object,
-     * which I consider far worse. If you find a better solution, please tweet
-     * me at @manuelmaly
+     * I know, Singleton is generally a no-no, but the only other option would be to
+     * store the currently running HNPostCommentsTasks in the App object, which I
+     * consider far worse. If you find a better solution, please tweet me at
+     * @manuelmaly
      *
      * @return
      */
     private static HNPostCommentsTask getInstance(String postID, int taskCode) {
         synchronized (HNPostCommentsTask.class) {
             if (!runningInstances.containsKey(postID))
-                runningInstances.put(postID, new HNPostCommentsTask(postID, taskCode));
+                runningInstances.put(postID, App.component().taskFactory().createPostComments(postID, taskCode));
         }
         return runningInstances.get(postID);
     }
@@ -67,14 +77,11 @@ public class HNPostCommentsTask extends BaseTask<HNPostComments> {
 
     class HNPostCommentsTaskRunnable extends CancelableRunnable {
 
-        StringDownloadCommand mFeedDownload;
+        IAPICommand<String> mFeedDownload;
 
         @Override
         public void run() {
-            HashMap<String, String> queryParams = new HashMap<String, String>();
-            queryParams.put("id", mPostID);
-            mFeedDownload = new StringDownloadCommand("https://news.ycombinator.com/item", queryParams,
-                RequestType.GET, false, null, App.getInstance(), HNCredentials.getCookieStore(App.getInstance()));
+            mFeedDownload = mCommandFactory.createCommentsDownload(mPostID, mCredentials.getCookieStore());
             mFeedDownload.run();
 
             if (mCancelled)
@@ -83,12 +90,11 @@ public class HNPostCommentsTask extends BaseTask<HNPostComments> {
                 mErrorCode = mFeedDownload.getErrorCode();
 
             if (!mCancelled && mErrorCode == IAPICommand.ERROR_NONE) {
-                HNCommentsParser commentsParser = new HNCommentsParser();
                 try {
-                    mResult = commentsParser.parse(mFeedDownload.getResponseContent());
-                    Run.inBackground(new Runnable() {
+                    mResult = mCommentsParser.parse(mFeedDownload.getResponseContent());
+                    mBackgroundExecutor.execute(new Runnable() {
                         public void run() {
-                            FileUtil.setLastHNPostComments(mResult, mPostID);
+                            mCommentsStore.writeLastComments(mResult, mPostID);
                         }
                     });
                 } catch (Exception e) {
@@ -102,7 +108,8 @@ public class HNPostCommentsTask extends BaseTask<HNPostComments> {
 
         @Override
         public void onCancelled() {
-            mFeedDownload.cancel();
+            if (mFeedDownload != null)
+                mFeedDownload.cancel();
         }
 
     }

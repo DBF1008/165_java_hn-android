@@ -3,7 +3,13 @@ package com.manuelmaly.hn.task;
 import android.app.Activity;
 import android.content.Context;
 
+import com.manuelmaly.hn.App;
 import com.manuelmaly.hn.model.HNFeed;
+import com.manuelmaly.hn.parser.IFeedParser;
+import com.manuelmaly.hn.server.ApiCommandFactory;
+import com.manuelmaly.hn.server.ICredentialsRepository;
+import com.manuelmaly.hn.storage.IFeedStore;
+import com.manuelmaly.hn.util.IBackgroundExecutor;
 
 public class HNFeedTaskLoadMore extends HNFeedTaskBase {
 
@@ -15,13 +21,15 @@ public class HNFeedTaskLoadMore extends HNFeedTaskBase {
     private static HNFeedTaskLoadMore getInstance(int taskCode) {
         synchronized (HNFeedTaskLoadMore.class) {
             if (instance == null)
-                instance = new HNFeedTaskLoadMore(taskCode);
+                instance = App.component().taskFactory().createLoadMore(taskCode);
         }
         return instance;
     }
 
-    private HNFeedTaskLoadMore(int taskCode) {
-        super(BROADCAST_INTENT_ID, taskCode);
+    HNFeedTaskLoadMore(int taskCode, ApiCommandFactory commandFactory, IFeedParser feedParser, IFeedStore feedStore,
+        ICredentialsRepository credentials, IBackgroundExecutor backgroundExecutor, ITaskResultPublisher publisher) {
+        super(BROADCAST_INTENT_ID, taskCode, commandFactory, feedParser, feedStore, credentials, backgroundExecutor,
+            publisher);
     }
 
     @Override

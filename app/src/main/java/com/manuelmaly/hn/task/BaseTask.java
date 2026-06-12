@@ -4,30 +4,32 @@ import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.os.AsyncTask;
+
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-import com.manuelmaly.hn.App;
 import com.manuelmaly.hn.reuse.CancelableRunnable;
 import com.manuelmaly.hn.server.IAPICommand;
 import com.manuelmaly.hn.task.ITaskFinishedHandler.TaskResultCode;
+import com.manuelmaly.hn.util.IBackgroundExecutor;
 import com.manuelmaly.hn.util.Run;
 
 import java.io.Serializable;
 import java.lang.ref.SoftReference;
 
 /**
- * Generic base for tasks performed asynchronously. Unlike {@link AsyncTask},
- * its on-finished-notification will be passed to every Activity instance which
- * has registered (listeners are notified via an intent sent to
- * {@link LocalBroadcastManager}). Meaning, there will be no Zombie tasks
- * performing stuff for nothing (e.g. because their callback Activity has been
- * destroyed because of orientation change).
- * 
+ * Generic base for tasks performed asynchronously. Its on-finished-notification is
+ * delivered to every Activity instance which has registered (listeners are notified
+ * via {@link ITaskResultPublisher}, backed in production by
+ * {@link LocalBroadcastManager}). Meaning, there will be no Zombie tasks performing
+ * stuff for nothing (e.g. because their callback Activity has been destroyed because
+ * of an orientation change).
+ *
+ * <p>Collaborators ({@link ITaskResultPublisher}, {@link IBackgroundExecutor}) are
+ * injected so the task can be unit-tested without the static {@code App}/
+ * {@code LocalBroadcastManager}/{@code Run} singletons.
+ *
  * @author manuelmaly
- * @param <T>
- *            result type
+ * @param <T> result type
  */
 public abstract class BaseTask<T extends Serializable> implements Runnable {
 
@@ -42,28 +44,29 @@ public abstract class BaseTask<T extends Serializable> implements Runnable {
     protected int mTaskCode;
     protected Object mTag;
 
-    public BaseTask(String notificationBroadcastIntentID, int taskCode) {
+    protected final ITaskResultPublisher mPublisher;
+    protected final IBackgroundExecutor mBackgroundExecutor;
+
+    public BaseTask(String notificationBroadcastIntentID, int taskCode, ITaskResultPublisher publisher,
+        IBackgroundExecutor backgroundExecutor) {
         mNotificationBroadcastIntentID = notificationBroadcastIntentID;
         mTaskCode = taskCode;
+        mPublisher = publisher;
+        mBackgroundExecutor = backgroundExecutor;
     }
 
     protected void startInBackground() {
-        Run.inBackground(this);
+        mBackgroundExecutor.execute(this);
     }
 
     /**
-     * The broadcast will be received by listeners on the main thread
-     * implicitly.
+     * The broadcast will be received by listeners on the main thread implicitly.
      */
     public void notifyFinished(int errorCode, Serializable result) {
-        Intent broadcastIntent = new Intent(mNotificationBroadcastIntentID);
-        broadcastIntent.putExtra(BROADCAST_INTENT_EXTRA_ERROR, errorCode);
-        broadcastIntent.putExtra(BROADCAST_INTENT_EXTRA_RESULT, result);
-        LocalBroadcastManager.getInstance(App.getInstance()).sendBroadcast(broadcastIntent);
+        mPublisher.publishFinished(mNotificationBroadcastIntentID, errorCode, result);
     }
 
     /**
-     * 
      * @param tag
      */
     public void setTag(Object tag) {
@@ -73,18 +76,17 @@ public abstract class BaseTask<T extends Serializable> implements Runnable {
     /**
      * Registers the given {@link BroadcastReceiver} to this task's
      * finished-notification.
-     * 
+     *
      * @param receiver
      */
     public void registerForFinishedNotification(BroadcastReceiver receiver) {
-        IntentFilter filter = new IntentFilter(mNotificationBroadcastIntentID);
-        LocalBroadcastManager.getInstance(App.getInstance()).registerReceiver(receiver, filter);
+        mPublisher.register(mNotificationBroadcastIntentID, receiver);
     }
 
     /**
-     * Schedules behaviour to be executed when this task has finished, for the
-     * given Activity.
-     * 
+     * Schedules behaviour to be executed when this task has finished, for the given
+     * Activity.
+     *
      * @param activity
      * @param finishedHandler
      * @param resultClazz
@@ -97,7 +99,7 @@ public abstract class BaseTask<T extends Serializable> implements Runnable {
         BroadcastReceiver finishedListener = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                LocalBroadcastManager.getInstance(App.getInstance()).unregisterReceiver(this);
+                mPublisher.unregister(this);
 
                 if (activityRef == null || activityRef.get() == null || finishedHandlerRef == null
                     || finishedHandlerRef.get() == null)
@@ -160,7 +162,7 @@ public abstract class BaseTask<T extends Serializable> implements Runnable {
     }
 
     public void cancel() {
-        Run.inBackground(new Runnable() {
+        mBackgroundExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 if (mTaskRunnable != null)

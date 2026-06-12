@@ -1,41 +1,39 @@
 package com.manuelmaly.hn.task;
 
 import android.app.Activity;
-import android.util.Log;
 
 import com.manuelmaly.hn.App;
-import com.manuelmaly.hn.Settings;
-import com.manuelmaly.hn.parser.HNNewsLoginParser;
 import com.manuelmaly.hn.reuse.CancelableRunnable;
-import com.manuelmaly.hn.server.GetHNUserTokenHTTPCommand;
+import com.manuelmaly.hn.server.ApiCommandFactory;
 import com.manuelmaly.hn.server.IAPICommand;
-import com.manuelmaly.hn.server.IAPICommand.RequestType;
-import com.manuelmaly.hn.server.StringDownloadCommand;
-
-import java.util.HashMap;
+import com.manuelmaly.hn.storage.ISettingsRepository;
+import com.manuelmaly.hn.util.IBackgroundExecutor;
 
 public class HNLoginTask extends BaseTask<Boolean> {
 
-    private static final String NEWSLOGIN_URL = "https://news.ycombinator.com/login";
-    private static final String GET_USERTOKEN_URL = "https://news.ycombinator.com/login";
     public static final String BROADCAST_INTENT_ID = "HNLoginTask";
 
     private static HNLoginTask instance;
 
     private String mUsername;
     private String mPassword;
-    private String mFNID;
+
+    private final ApiCommandFactory mCommandFactory;
+    private final ISettingsRepository mSettings;
 
     private static HNLoginTask getInstance(int taskCode) {
         synchronized (HNLoginTask.class) {
             if (instance == null)
-                instance = new HNLoginTask(taskCode);
+                instance = App.component().taskFactory().createLogin(taskCode);
         }
         return instance;
     }
 
-    public HNLoginTask(int taskCode) {
-        super(BROADCAST_INTENT_ID, taskCode);
+    HNLoginTask(int taskCode, ApiCommandFactory commandFactory, ISettingsRepository settings,
+        IBackgroundExecutor backgroundExecutor, ITaskResultPublisher publisher) {
+        super(BROADCAST_INTENT_ID, taskCode, publisher, backgroundExecutor);
+        mCommandFactory = commandFactory;
+        mSettings = settings;
     }
 
     @Override
@@ -60,54 +58,21 @@ public class HNLoginTask extends BaseTask<Boolean> {
 
     class HNLoginTaskRunnable extends CancelableRunnable {
 
-        StringDownloadCommand newsLoginDownload;
-        GetHNUserTokenHTTPCommand getUserTokenCommand;
+        IAPICommand<String> getUserTokenCommand;
 
         @Override
         public void run() {
-//            mFNID = getFNID();
-//            if (mFNID == null)
-//                return;
-
             String userToken = getUserToken();
             if (userToken != null && !userToken.equals("")) {
                 mResult = true;
-                Settings.setUserData(mUsername, userToken, App.getInstance());
+                mSettings.setUserData(mUsername, userToken);
             }
-            else 
+            else
                 mResult = false;
         }
 
-        private String getFNID() {
-            newsLoginDownload = new StringDownloadCommand(NEWSLOGIN_URL, new HashMap<String, String>(), RequestType.GET, false, null,
-                App.getInstance(), null);
-            newsLoginDownload.run();
-
-            if (mCancelled)
-                mErrorCode = IAPICommand.ERROR_CANCELLED_BY_USER;
-            else
-                mErrorCode = newsLoginDownload.getErrorCode();
-
-            if (!mCancelled && mErrorCode == IAPICommand.ERROR_NONE) {
-                HNNewsLoginParser loginParser = new HNNewsLoginParser();
-                try {
-                    return loginParser.parse(newsLoginDownload.getResponseContent());
-                } catch (Exception e) {
-                    Log.e("HNFeedTask", "Login Page Parser Error :(", e);
-                }
-            }
-            return null;
-        }
-
         private String getUserToken() {
-            HashMap<String, String> queryParams = new HashMap<String, String>();
-            queryParams.put("goto", "news");
-            HashMap<String, String> body = new HashMap<String, String>();
-            body.put("goto", "news");
-            body.put("acct", mUsername);
-            body.put("pw", mPassword);
-
-            getUserTokenCommand = new GetHNUserTokenHTTPCommand(GET_USERTOKEN_URL, queryParams, RequestType.POST, false, null, App.getInstance(), body);
+            getUserTokenCommand = mCommandFactory.createLoginToken(mUsername, mPassword);
             getUserTokenCommand.run();
 
             if (mCancelled)
@@ -123,8 +88,6 @@ public class HNLoginTask extends BaseTask<Boolean> {
 
         @Override
         public void onCancelled() {
-            if (newsLoginDownload != null)
-                newsLoginDownload.cancel();
             if (getUserTokenCommand != null)
                 getUserTokenCommand.cancel();
         }

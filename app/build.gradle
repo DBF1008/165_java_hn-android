@@ -10,6 +10,11 @@ dependencies {
     annotationProcessor "org.androidannotations:androidannotations:4.8.0"
     implementation "org.androidannotations:androidannotations-api:4.8.0"
 
+    // Dependency injection (Dagger 2). Pure-Java annotation processing (no kapt);
+    // coexists with AndroidAnnotations because it does not wrap Application/Activity.
+    implementation "com.google.dagger:dagger:2.48.1"
+    annotationProcessor "com.google.dagger:dagger-compiler:2.48.1"
+
     implementation "androidx.core:core:1.9.0"
     implementation "androidx.legacy:legacy-support-core-utils:1.0.0"
     implementation "androidx.appcompat:appcompat:1.5.1"
@@ -18,11 +23,19 @@ dependencies {
     implementation "cz.msebera.android:httpclient:4.5.8"
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // Unit tests (pure JVM). jsoup is a local jar, so add it explicitly to the
+    // test classpath to be safe.
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.mockito:mockito-core:4.11.0"
+    testImplementation files('libs/jsoup-1.7.2.jar')
 }
 
 android {
     compileOptions {
         encoding "UTF-8"
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
     compileSdkVersion 33
 
@@ -34,22 +47,31 @@ android {
         versionName "1.9.16"
     }
 
-    signingConfigs {
-        def props = new Properties()
-        props.load(new FileInputStream(rootProject.file("release.properties")))
+    // Only load release signing config when release.properties is present, and do
+    // it lazily inside the release block. Previously this ran at configuration time
+    // unconditionally, which broke EVERY gradle task (including `test`) when the
+    // file was absent.
+    def releaseProps = rootProject.file("release.properties")
 
-        release {
-            storeFile new File(props.keyStore.toString())
-            storePassword props.keyStorePassword
-            keyAlias props.keyAlias
-            keyPassword props.keyAliasPassword
+    signingConfigs {
+        if (releaseProps.exists()) {
+            release {
+                def props = new Properties()
+                props.load(new FileInputStream(releaseProps))
+                storeFile new File(props.keyStore.toString())
+                storePassword props.keyStorePassword
+                keyAlias props.keyAlias
+                keyPassword props.keyAliasPassword
+            }
         }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
+            if (releaseProps.exists()) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
 
             applicationVariants.all { variant ->
@@ -68,5 +90,9 @@ android {
 
         }
     }
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
     namespace 'com.manuelmaly.hn'
 }

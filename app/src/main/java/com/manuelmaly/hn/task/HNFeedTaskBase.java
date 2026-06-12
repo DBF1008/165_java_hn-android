@@ -2,23 +2,30 @@ package com.manuelmaly.hn.task;
 
 import android.util.Log;
 
-import com.manuelmaly.hn.App;
 import com.manuelmaly.hn.model.HNFeed;
-import com.manuelmaly.hn.parser.HNFeedParser;
+import com.manuelmaly.hn.parser.IFeedParser;
 import com.manuelmaly.hn.reuse.CancelableRunnable;
-import com.manuelmaly.hn.server.HNCredentials;
+import com.manuelmaly.hn.server.ApiCommandFactory;
 import com.manuelmaly.hn.server.IAPICommand;
-import com.manuelmaly.hn.server.IAPICommand.RequestType;
-import com.manuelmaly.hn.server.StringDownloadCommand;
-import com.manuelmaly.hn.util.FileUtil;
-import com.manuelmaly.hn.util.Run;
-
-import java.util.HashMap;
+import com.manuelmaly.hn.server.ICredentialsRepository;
+import com.manuelmaly.hn.storage.IFeedStore;
+import com.manuelmaly.hn.util.IBackgroundExecutor;
 
 public abstract class HNFeedTaskBase extends BaseTask<HNFeed> {
 
-    public HNFeedTaskBase(String notificationBroadcastIntentID, int taskCode) {
-        super(notificationBroadcastIntentID, taskCode);
+    protected final ApiCommandFactory mCommandFactory;
+    protected final IFeedParser mFeedParser;
+    protected final IFeedStore mFeedStore;
+    protected final ICredentialsRepository mCredentials;
+
+    public HNFeedTaskBase(String notificationBroadcastIntentID, int taskCode, ApiCommandFactory commandFactory,
+        IFeedParser feedParser, IFeedStore feedStore, ICredentialsRepository credentials,
+        IBackgroundExecutor backgroundExecutor, ITaskResultPublisher publisher) {
+        super(notificationBroadcastIntentID, taskCode, publisher, backgroundExecutor);
+        mCommandFactory = commandFactory;
+        mFeedParser = feedParser;
+        mFeedStore = feedStore;
+        mCredentials = credentials;
     }
 
     @Override
@@ -30,12 +37,11 @@ public abstract class HNFeedTaskBase extends BaseTask<HNFeed> {
 
     class HNFeedTaskRunnable extends CancelableRunnable {
 
-        StringDownloadCommand mFeedDownload;
+        IAPICommand<String> mFeedDownload;
 
         @Override
         public void run() {
-            mFeedDownload = new StringDownloadCommand(getFeedURL(), new HashMap<String, String>(), RequestType.GET, false, null,
-                App.getInstance(), HNCredentials.getCookieStore(App.getInstance()));
+            mFeedDownload = mCommandFactory.createFeedDownload(getFeedURL(), mCredentials.getCookieStore());
 
             mFeedDownload.run();
 
@@ -45,12 +51,11 @@ public abstract class HNFeedTaskBase extends BaseTask<HNFeed> {
                 mErrorCode = mFeedDownload.getErrorCode();
 
             if (!mCancelled && mErrorCode == IAPICommand.ERROR_NONE) {
-                HNFeedParser feedParser = new HNFeedParser();
                 try {
-                    mResult = feedParser.parse(mFeedDownload.getResponseContent());
-                    Run.inBackground(new Runnable() {
+                    mResult = mFeedParser.parse(mFeedDownload.getResponseContent());
+                    mBackgroundExecutor.execute(new Runnable() {
                         public void run() {
-                            FileUtil.setLastHNFeed(mResult);
+                            mFeedStore.writeLastFeed(mResult);
                         }
                     });
                 } catch (Exception e) {
@@ -65,7 +70,8 @@ public abstract class HNFeedTaskBase extends BaseTask<HNFeed> {
 
         @Override
         public void onCancelled() {
-            mFeedDownload.cancel();
+            if (mFeedDownload != null)
+                mFeedDownload.cancel();
         }
 
     }

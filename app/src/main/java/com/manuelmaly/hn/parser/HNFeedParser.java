@@ -1,24 +1,31 @@
 package com.manuelmaly.hn.parser;
 
-import com.manuelmaly.hn.App;
-import com.manuelmaly.hn.Settings;
 import com.manuelmaly.hn.model.HNFeed;
 import com.manuelmaly.hn.model.HNPost;
 import com.manuelmaly.hn.util.HNHelper;
+
+import javax.inject.Inject;
 
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.util.ArrayList;
 
-public class HNFeedParser extends BaseHTMLParser<HNFeed> {
+public class HNFeedParser extends BaseHTMLParser<HNFeed> implements IFeedParser {
+
+    private final IUserContext mUserContext;
+
+    @Inject
+    public HNFeedParser(IUserContext userContext) {
+        mUserContext = userContext;
+    }
 
     @Override
     public HNFeed parseDocument(Element doc) throws Exception {
         if (doc == null)
             return new HNFeed();
-        
-        String currentUser = Settings.getUserName(App.getInstance());
+
+        String currentUser = mUserContext.getCurrentUsername();
 
         ArrayList<HNPost> posts = new ArrayList<HNPost>();
 

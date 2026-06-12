@@ -56,6 +56,8 @@ public abstract class BaseHTTPCommand<T extends Serializable> implements IAPICom
     private boolean mNotifyFinishedBroadcast;
     HttpRequestBase mRequest;
     private CookieStore mCookieStore;
+    private IHttpClientProvider mHttpClientProvider;
+    private INetworkStatus mNetworkStatus;
 
     public BaseHTTPCommand(final String url, final HashMap<String, String> params, RequestType type,
         boolean notifyFinishedBroadcast, String notificationBroadcastIntentID, Context applicationContext,
@@ -101,7 +103,9 @@ public abstract class BaseHTTPCommand<T extends Serializable> implements IAPICom
             }
 
             // Start request, handle response in separate handler:
-            DefaultHttpClient httpclient = new DefaultHttpClient(getHttpParams());
+            DefaultHttpClient httpclient = mHttpClientProvider != null
+                ? mHttpClientProvider.create(mHttpTimeoutMS, mSocketTimeoutMS)
+                : new DefaultHttpClient(getHttpParams());
             if (mCookieStore == null)
                 mCookieStore = new BasicCookieStore();
             httpclient.setCookieStore(mCookieStore);
@@ -144,7 +148,12 @@ public abstract class BaseHTTPCommand<T extends Serializable> implements IAPICom
      * @return boolean true if offline, or false if online.
      */
     protected boolean cancelBecauseDeviceOffline() {
-        if (mApplicationContext != null && !ConnectivityUtils.isDeviceOnline(mApplicationContext)) {
+        boolean offline;
+        if (mNetworkStatus != null)
+            offline = !mNetworkStatus.isOnline();
+        else
+            offline = mApplicationContext != null && !ConnectivityUtils.isDeviceOnline(mApplicationContext);
+        if (offline) {
             setErrorCode(ERROR_DEVICE_OFFLINE);
             return true;
         }
@@ -230,6 +239,16 @@ public abstract class BaseHTTPCommand<T extends Serializable> implements IAPICom
 
     public void setCookieStore(CookieStore cookieStore) {
         mCookieStore = cookieStore;
+    }
+
+    /** Injected by {@link ApiCommandFactory}; replaces the hard-coded HttpClient creation. */
+    public void setHttpClientProvider(IHttpClientProvider httpClientProvider) {
+        mHttpClientProvider = httpClientProvider;
+    }
+
+    /** Injected by {@link ApiCommandFactory}; replaces the static connectivity check. */
+    public void setNetworkStatus(INetworkStatus networkStatus) {
+        mNetworkStatus = networkStatus;
     }
 
 }

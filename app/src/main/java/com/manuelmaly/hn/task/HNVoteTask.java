@@ -4,10 +4,10 @@ import android.app.Activity;
 
 import com.manuelmaly.hn.App;
 import com.manuelmaly.hn.reuse.CancelableRunnable;
-import com.manuelmaly.hn.server.HNCredentials;
-import com.manuelmaly.hn.server.HNVoteCommand;
+import com.manuelmaly.hn.server.ApiCommandFactory;
 import com.manuelmaly.hn.server.IAPICommand;
-import com.manuelmaly.hn.server.IAPICommand.RequestType;
+import com.manuelmaly.hn.server.ICredentialsRepository;
+import com.manuelmaly.hn.util.IBackgroundExecutor;
 
 public class HNVoteTask extends BaseTask<Boolean> {
 
@@ -17,16 +17,22 @@ public class HNVoteTask extends BaseTask<Boolean> {
 
     private String mVoteURL;
 
+    private final ApiCommandFactory mCommandFactory;
+    private final ICredentialsRepository mCredentials;
+
     private static HNVoteTask getInstance(int taskCode) {
         synchronized (HNVoteTask.class) {
             if (instance == null)
-                instance = new HNVoteTask(taskCode);
+                instance = App.component().taskFactory().createVote(taskCode);
         }
         return instance;
     }
 
-    public HNVoteTask(int taskCode) {
-        super(BROADCAST_INTENT_ID, taskCode);
+    HNVoteTask(int taskCode, ApiCommandFactory commandFactory, ICredentialsRepository credentials,
+        IBackgroundExecutor backgroundExecutor, ITaskResultPublisher publisher) {
+        super(BROADCAST_INTENT_ID, taskCode, publisher, backgroundExecutor);
+        mCommandFactory = commandFactory;
+        mCredentials = credentials;
     }
 
     @Override
@@ -37,7 +43,7 @@ public class HNVoteTask extends BaseTask<Boolean> {
     public void setVoteURL(String voteURL) {
         mVoteURL = voteURL;
     }
-    
+
     public static void start(String voteURL, Activity activity,
         ITaskFinishedHandler<Boolean> finishedHandler, int taskCode, Object tag) {
         HNVoteTask task = getInstance(taskCode);
@@ -51,7 +57,7 @@ public class HNVoteTask extends BaseTask<Boolean> {
 
     class HNVoteTaskRunnable extends CancelableRunnable {
 
-        HNVoteCommand mVoteCommand;
+        IAPICommand<Boolean> mVoteCommand;
 
         @Override
         public void run() {
@@ -59,15 +65,20 @@ public class HNVoteTask extends BaseTask<Boolean> {
         }
 
         private Boolean vote() {
-            mVoteCommand = new HNVoteCommand(mVoteURL, null, RequestType.GET, false, null,
-                App.getInstance(), HNCredentials.getCookieStore(App.getInstance()));
+            mVoteCommand = mCommandFactory.createVote(mVoteURL, mCredentials.getCookieStore());
             mVoteCommand.run();
-            
+
+            // Propagate the command's error code (previously this was never assigned,
+            // so failures were silently reported as ERROR_NONE / success).
+            if (mCancelled)
+                mErrorCode = IAPICommand.ERROR_CANCELLED_BY_USER;
+            else
+                mErrorCode = mVoteCommand.getErrorCode();
+
             if (mCancelled || mErrorCode != IAPICommand.ERROR_NONE)
                 return null;
-            
-            return mVoteCommand.getResponseContent();
 
+            return mVoteCommand.getResponseContent();
         }
 
         @Override

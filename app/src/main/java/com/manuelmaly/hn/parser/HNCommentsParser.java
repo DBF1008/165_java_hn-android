@@ -1,19 +1,26 @@
 package com.manuelmaly.hn.parser;
 
-import android.graphics.Color;
-
-import com.manuelmaly.hn.App;
-import com.manuelmaly.hn.Settings;
 import com.manuelmaly.hn.model.HNComment;
 import com.manuelmaly.hn.model.HNPostComments;
 import com.manuelmaly.hn.util.HNHelper;
+
+import javax.inject.Inject;
 
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.util.ArrayList;
 
-public class HNCommentsParser extends BaseHTMLParser<HNPostComments> {
+public class HNCommentsParser extends BaseHTMLParser<HNPostComments> implements ICommentsParser {
+
+    private final IUserContext mUserContext;
+    private final IColorProvider mColors;
+
+    @Inject
+    public HNCommentsParser(IUserContext userContext, IColorProvider colors) {
+        mUserContext = userContext;
+        mColors = colors;
+    }
 
     @Override
     public HNPostComments parseDocument(Element doc) throws Exception {
@@ -24,7 +31,7 @@ public class HNCommentsParser extends BaseHTMLParser<HNPostComments> {
 
         Elements tableRows = doc.select("table tr table tr:has(table)");
 
-        String currentUser = Settings.getUserName(App.getInstance());
+        String currentUser = mUserContext.getCurrentUsername();
 
         String text = null;
         String author = null;
@@ -53,7 +60,7 @@ public class HNCommentsParser extends BaseHTMLParser<HNPostComments> {
             mainCommentDiv.select("div.reply").remove();
 
             // Parse the class attribute to get the comment color
-            int commentColor = Color.rgb(0, 0, 0);
+            int commentColor = mColors.rgb(0, 0, 0);
             if (mainCommentDiv.attributes().hasKey("class")) {
                 commentColor = getCommentColor(mainCommentDiv.attributes().get("class"));
             }
@@ -125,25 +132,25 @@ public class HNCommentsParser extends BaseHTMLParser<HNPostComments> {
 
     private int getCommentColor(String className) {
         if ("c5a".equals(className)) {
-            return Color.rgb(0x5A, 0x5A, 0x5A);
+            return mColors.rgb(0x5A, 0x5A, 0x5A);
         } else if ("c73".equals(className)) {
-            return Color.rgb(0x73, 0x73, 0x73);
+            return mColors.rgb(0x73, 0x73, 0x73);
         } else if ("c82".equals(className)) {
-            return Color.rgb(0x82, 0x82, 0x82);
+            return mColors.rgb(0x82, 0x82, 0x82);
         } else if ("c88".equals(className)) {
-            return Color.rgb(0x88, 0x88, 0x88);
+            return mColors.rgb(0x88, 0x88, 0x88);
         } else if ("c9c".equals(className)) {
-            return Color.rgb(0x9C, 0x9C, 0x9C);
+            return mColors.rgb(0x9C, 0x9C, 0x9C);
         } else if ("cae".equals(className)) {
-            return Color.rgb(0xAE, 0xAE, 0xAE);
+            return mColors.rgb(0xAE, 0xAE, 0xAE);
         } else if ("cbe".equals(className)) {
-            return Color.rgb(0xBE, 0xBE, 0xBE);
+            return mColors.rgb(0xBE, 0xBE, 0xBE);
         } else if ("cce".equals(className)) {
-            return Color.rgb(0xCE, 0xCE, 0xCE);
+            return mColors.rgb(0xCE, 0xCE, 0xCE);
         } else if ("cdd".equals(className)) {
-            return Color.rgb(0xDD, 0xDD, 0xDD);
+            return mColors.rgb(0xDD, 0xDD, 0xDD);
         } else {
-            return Color.rgb(0, 0, 0);
+            return mColors.rgb(0, 0, 0);
         }
     }
 }

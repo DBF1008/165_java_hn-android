@@ -52,7 +52,13 @@ public interface IAPICommand<T> extends Runnable {
     public int getActualStatusCode();
 
     public void responseHandlingFinished(T parsedResponse, int responseHttpStatus);
-    
+
+    /**
+     * Aborts the command if it is currently running. Implementations must be
+     * safe to call before the command has started.
+     */
+    public void cancel();
+
     public enum RequestType {
         GET, PUT, POST, DELETE
     }
