@@ -40,6 +40,9 @@ import com.manuelmaly.hn.model.HNComment;
 import com.manuelmaly.hn.model.HNCommentTreeNode;
 import com.manuelmaly.hn.model.HNPost;
 import com.manuelmaly.hn.model.HNPostComments;
+import com.manuelmaly.hn.prefs.FontSizeProfile;
+import com.manuelmaly.hn.prefs.FontSizeTracker;
+import com.manuelmaly.hn.prefs.ReadingPreferences;
 import com.manuelmaly.hn.reuse.LinkifiedTextView;
 import com.manuelmaly.hn.task.HNPostCommentsTask;
 import com.manuelmaly.hn.task.HNVoteTask;
@@ -90,7 +93,8 @@ public class CommentsActivity extends BaseListActivity implements
     CommentsAdapter mCommentsListAdapter;
     boolean mHaveLoadedPosts = false;
 
-    String mCurrentFontSize = null;
+    ReadingPreferences mReadingPrefs;
+    FontSizeTracker mFontSizeTracker = new FontSizeTracker();
     int mFontSizeText;
     int mFontSizeMetadata;
     int mCommentLevelIndentPx;
@@ -107,6 +111,7 @@ public class CommentsActivity extends BaseListActivity implements
 
     @AfterViews
     public void init() {
+        mReadingPrefs = new ReadingPreferences(this);
         mPost = (HNPost) getIntent().getSerializableExtra(EXTRA_HNPOST);
         if (mPost == null || mPost.getPostID() == null) {
             Toast.makeText(this, "The belonging post has not been loaded",
@@ -136,13 +141,8 @@ public class CommentsActivity extends BaseListActivity implements
         mActionbarTitle.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (Settings.getHtmlViewer(CommentsActivity.this).equals(
-                        getString(R.string.pref_htmlviewer_browser))) {
-
-                    String articleURL = ArticleReaderActivity
-                            .getArticleViewURL(mPost, Settings
-                                    .getHtmlProvider(CommentsActivity.this),
-                                    CommentsActivity.this);
+                if (mReadingPrefs.getHtmlViewer().opensInBrowser()) {
+                    String articleURL = mReadingPrefs.articleUrl(mPost.getURL(), null);
                     MainActivity.openURLInBrowser(articleURL,
                             CommentsActivity.this);
                 } else {
@@ -169,7 +169,10 @@ public class CommentsActivity extends BaseListActivity implements
         super.onResume();
 
         // refresh if font size changed
-        if (refreshFontSizes()) {
+        if (mFontSizeTracker.update(mReadingPrefs.getFontSize())) {
+            FontSizeProfile profile = mFontSizeTracker.profile();
+            mFontSizeText = profile.commentText();
+            mFontSizeMetadata = profile.commentMetadata();
             mCommentsListAdapter.notifyDataSetChanged();
         }
 
@@ -244,7 +247,7 @@ public class CommentsActivity extends BaseListActivity implements
     }
 
     private void toggleSwipeRefreshLayout() {
-        mSwipeRefreshLayout.setEnabled(Settings.isPullDownRefresh(CommentsActivity.this));
+        mSwipeRefreshLayout.setEnabled(mReadingPrefs.isPullDownRefresh());
     }
 
     @Override
@@ -307,27 +310,6 @@ public class CommentsActivity extends BaseListActivity implements
         mHaveLoadedPosts = false;
         setShowRefreshing(true);
         HNPostCommentsTask.startOrReattach(this, this, mPost.getPostID(), 0);
-    }
-
-    private boolean refreshFontSizes() {
-        final String fontSize = Settings.getFontSize(this);
-        if ((mCurrentFontSize == null) || (!mCurrentFontSize.equals(fontSize))) {
-            mCurrentFontSize = fontSize;
-            if (fontSize.equals(getString(R.string.pref_fontsize_small))) {
-                mFontSizeText = 14;
-                mFontSizeMetadata = 12;
-            } else
-                if (fontSize.equals(getString(R.string.pref_fontsize_normal))) {
-                    mFontSizeText = 16;
-                    mFontSizeMetadata = 14;
-                } else {
-                    mFontSizeText = 20;
-                    mFontSizeMetadata = 18;
-                }
-            return true;
-        }
-
-        return false;
     }
 
     private void vote(String voteURL, HNComment comment) {
@@ -412,7 +394,7 @@ public class CommentsActivity extends BaseListActivity implements
     }
 
     private void setShowRefreshing(boolean showRefreshing) {
-        if (!Settings.isPullDownRefresh(CommentsActivity.this)) {
+        if (!mReadingPrefs.isPullDownRefresh()) {
             mShouldShowRefreshing = showRefreshing;
             supportInvalidateOptionsMenu();
         }

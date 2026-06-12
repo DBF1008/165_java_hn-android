@@ -15,26 +15,6 @@ public class Settings {
     
     public static final String USER_DATA_SEPARATOR = ":";
     
-    public static String getFontSize(Context c) {
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(c);
-        return sharedPref.getString(PREF_FONTSIZE, c.getString(R.string.pref_default_fontsize));
-    }
-
-    public static String getHtmlProvider(Context c) {
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(c);
-        return sharedPref.getString(PREF_HTMLPROVIDER, c.getString(R.string.pref_default_htmlprovider));
-    }
-
-    public static String getHtmlViewer(Context c) {
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(c);
-        return sharedPref.getString(PREF_HTMLVIEWER, c.getString(R.string.pref_default_htmlviewer));
-    }
-
-    public static boolean isPullDownRefresh(Context c) {
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(c);
-        return sharedPref.getBoolean(PREF_PULLDOWNREFRESH, false);
-    }
-
     public static boolean isUserLoggedIn(Context c) {
         return !getUserName(c).equals("");
         

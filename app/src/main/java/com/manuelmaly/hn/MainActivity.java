@@ -3,6 +3,9 @@ package com.manuelmaly.hn;
 import com.manuelmaly.hn.model.HNFeed;
 import com.manuelmaly.hn.model.HNPost;
 import com.manuelmaly.hn.parser.BaseHTMLParser;
+import com.manuelmaly.hn.prefs.FontSizeProfile;
+import com.manuelmaly.hn.prefs.FontSizeTracker;
+import com.manuelmaly.hn.prefs.ReadingPreferences;
 import com.manuelmaly.hn.server.HNCredentials;
 import com.manuelmaly.hn.task.HNFeedTaskLoadMore;
 import com.manuelmaly.hn.task.HNFeedTaskMainFeed;
@@ -82,7 +85,8 @@ public class MainActivity extends BaseListActivity implements
     Set<HNPost> mUpvotedPosts;
     Set<Integer> mAlreadyRead;
 
-    String mCurrentFontSize = null;
+    ReadingPreferences mReadingPrefs;
+    FontSizeTracker mFontSizeTracker = new FontSizeTracker();
     int mFontSizeTitle;
     int mFontSizeDetails;
     int mTitleColor;
@@ -123,6 +127,7 @@ public class MainActivity extends BaseListActivity implements
 
     @AfterViews
     public void init() {
+        mReadingPrefs = new ReadingPreferences(this);
         mFeed = new HNFeed(new ArrayList<HNPost>(), null, "");
         mPostsListAdapter = new PostsAdapter();
         mUpvotedPosts = new HashSet<HNPost>();
@@ -165,7 +170,10 @@ public class MainActivity extends BaseListActivity implements
         }
 
         // refresh if font size changed
-        if (refreshFontSizes()) {
+        if (mFontSizeTracker.update(mReadingPrefs.getFontSize())) {
+            FontSizeProfile profile = mFontSizeTracker.profile();
+            mFontSizeTitle = profile.listTitle();
+            mFontSizeDetails = profile.listDetails();
             mPostsListAdapter.notifyDataSetChanged();
         }
 
@@ -217,7 +225,7 @@ public class MainActivity extends BaseListActivity implements
     }
 
     private void toggleSwipeRefreshLayout() {
-        mSwipeRefreshLayout.setEnabled(Settings.isPullDownRefresh(MainActivity.this));
+        mSwipeRefreshLayout.setEnabled(mReadingPrefs.isPullDownRefresh());
     }
 
     @Override
@@ -327,27 +335,6 @@ public class MainActivity extends BaseListActivity implements
     private void startFeedLoading() {
         setShowRefreshing(true);
         HNFeedTaskMainFeed.startOrReattach(this, this, TASKCODE_LOAD_FEED);
-    }
-
-    private boolean refreshFontSizes() {
-        final String fontSize = Settings.getFontSize(this);
-        if ((mCurrentFontSize == null) || (!mCurrentFontSize.equals(fontSize))) {
-            mCurrentFontSize = fontSize;
-            if (fontSize.equals(getString(R.string.pref_fontsize_small))) {
-                mFontSizeTitle = 15;
-                mFontSizeDetails = 11;
-            } else
-                if (fontSize.equals(getString(R.string.pref_fontsize_normal))) {
-                    mFontSizeTitle = 18;
-                    mFontSizeDetails = 12;
-                } else {
-                    mFontSizeTitle = 22;
-                    mFontSizeDetails = 15;
-                }
-            return true;
-        } else {
-            return false;
-        }
     }
 
     private void vote(String voteURL, HNPost post) {
@@ -500,10 +487,9 @@ public class MainActivity extends BaseListActivity implements
                         if(getItem(position).getURLDomain().equals(HACKERNEWS_URLDOMAIN)){
                             startCommentActivity(position);
                         }
-                        else  if (Settings.getHtmlViewer(MainActivity.this).equals(
-                                getString(R.string.pref_htmlviewer_browser))) {
+                        else if (mReadingPrefs.getHtmlViewer().opensInBrowser()) {
                             openURLInBrowser(
-                                    getArticleViewURL(getItem(position)),
+                                    mReadingPrefs.articleUrl(getItem(position).getURL(), null),
                                     MainActivity.this);
                         } else {
                             openPostInApp(getItem(position), null,
@@ -700,7 +686,7 @@ public class MainActivity extends BaseListActivity implements
                 markAsRead(mPost);
                 break;
             case 5:
-                openURLInBrowser(getArticleViewURL(mPost), MainActivity.this);
+                openURLInBrowser(mReadingPrefs.articleUrl(mPost.getURL(), null), MainActivity.this);
                 markAsRead(mPost);
                 break;
             case 6:
@@ -711,11 +697,6 @@ public class MainActivity extends BaseListActivity implements
             }
         }
 
-    }
-
-    private String getArticleViewURL(HNPost post) {
-        return ArticleReaderActivity.getArticleViewURL(post,
-                Settings.getHtmlProvider(this), this);
     }
 
     public static void openURLInBrowser(String url, Activity a) {
@@ -743,7 +724,7 @@ public class MainActivity extends BaseListActivity implements
     }
 
     private void setShowRefreshing(boolean showRefreshing) {
-        if (!Settings.isPullDownRefresh(MainActivity.this)) {
+        if (!mReadingPrefs.isPullDownRefresh()) {
             mShouldShowRefreshing = showRefreshing;
             supportInvalidateOptionsMenu();
         }

@@ -21,21 +21,6 @@ import com.manuelmaly.hn.util.Run;
 
 public class SettingsActivity extends PreferenceActivity implements OnSharedPreferenceChangeListener {
 
-    public enum FONTSIZE {
-        FONTSIZE_SMALL, FONTSIZE_NORMAL, FONTSIZE_BIG
-    }
-
-    public enum HTMLPROVIDER {
-        HTMLPROVIDER_ORIGINAL_ARTICLE_URL,
-        HTMLPROVIDER_GOOGLE,
-        HTMLPROVIDER_VIEWTEXT,
-        HTMLPROVIDER_INSTAPAPER
-    }
-
-    public enum HTMLVIEWER {
-        HTMLVIEWER_WITHINAPP, HTMLVIEWER_BROWSER
-    }
-
     private static final int REQUEST_LOGIN = 100;
     private Preference mUserPref;
 

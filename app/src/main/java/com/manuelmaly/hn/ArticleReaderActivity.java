@@ -1,7 +1,6 @@
 package com.manuelmaly.hn;
 
 import android.annotation.SuppressLint;
-import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.Bundle;
@@ -22,6 +21,9 @@ import android.webkit.WebViewClient;
 import android.widget.TextView;
 
 import com.manuelmaly.hn.model.HNPost;
+import com.manuelmaly.hn.prefs.ArticleUrlBuilder;
+import com.manuelmaly.hn.prefs.HtmlProvider;
+import com.manuelmaly.hn.prefs.ReadingPreferences;
 import com.manuelmaly.hn.util.FontHelper;
 import com.manuelmaly.hn.util.SpotlightActivity;
 import com.manuelmaly.hn.util.ViewedUtils;
@@ -31,8 +33,6 @@ import org.androidannotations.annotations.EActivity;
 import org.androidannotations.annotations.SystemService;
 import org.androidannotations.annotations.ViewById;
 
-import java.net.URLEncoder;
-
 @EActivity(R.layout.article_activity)
 public class ArticleReaderActivity extends AppCompatActivity {
 
@@ -41,10 +41,6 @@ public class ArticleReaderActivity extends AppCompatActivity {
   private static final String WEB_VIEW_SAVED_STATE_KEY = "webViewSavedState";
   public static final String EXTRA_HNPOST = "HNPOST";
   public static final String EXTRA_HTMLPROVIDER_OVERRIDE = "HTMLPROVIDER_OVERRIDE";
-
-  private static final String HTMLPROVIDER_PREFIX_VIEWTEXT = "http://viewtext.org/article?url=";
-  private static final String HTMLPROVIDER_PREFIX_GOOGLE = "http://www.google.com/gwt/x?u=";
-  private static final String HTMLPROVIDER_PREFIX_INSTAPAPER = "http://www.instapaper.com/text?u=";
 
   @ViewById(R.id.article_webview)
   WebView mWebView;
@@ -58,7 +54,8 @@ public class ArticleReaderActivity extends AppCompatActivity {
   LayoutInflater mInflater;
 
   HNPost mPost;
-  String mHtmlProvider;
+  HtmlProvider mHtmlProvider;
+  ReadingPreferences mReadingPrefs;
 
   boolean mShouldShowRefreshing = false;
   private Bundle mWebViewSavedState;
@@ -68,17 +65,13 @@ public class ArticleReaderActivity extends AppCompatActivity {
   @AfterViews
   @SuppressLint("SetJavaScriptEnabled")
   public void init() {
+    mReadingPrefs = new ReadingPreferences( this );
     mActionbarTitle = (TextView) getSupportActionBar().getCustomView().findViewById( R.id.actionbar_title );
 
     mPost = (HNPost) getIntent().getSerializableExtra( EXTRA_HNPOST );
     if (mPost != null && mPost.getURL() != null) {
-      String htmlProviderOverride = getIntent().getStringExtra( EXTRA_HTMLPROVIDER_OVERRIDE );
-      if (htmlProviderOverride != null) {
-        mHtmlProvider = htmlProviderOverride;
-      } else {
-        mHtmlProvider = Settings.getHtmlProvider( this );
-      }
-      mWebView.loadUrl( getArticleViewURL( mPost, mHtmlProvider, this ) );
+      mHtmlProvider = mReadingPrefs.resolveHtmlProvider( getIntent().getStringExtra( EXTRA_HTMLPROVIDER_OVERRIDE ) );
+      mWebView.loadUrl( ArticleUrlBuilder.build( mHtmlProvider, mPost.getURL() ) );
     }
 
     mWebView.getSettings().setBuiltInZoomControls( true );
@@ -96,7 +89,7 @@ public class ArticleReaderActivity extends AppCompatActivity {
     mSwipeRefreshLayout.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
       @Override
       public void onRefresh() {
-        mWebView.loadUrl(getArticleViewURL(mPost, mHtmlProvider, ArticleReaderActivity.this));
+        mWebView.loadUrl(ArticleUrlBuilder.build(mHtmlProvider, mPost.getURL()));
       }
     });
   }
@@ -165,7 +158,7 @@ public class ArticleReaderActivity extends AppCompatActivity {
       if (mWebViewIsLoading) {
         mWebView.stopLoading();
       } else {
-        mWebView.loadUrl( getArticleViewURL( mPost, mHtmlProvider, ArticleReaderActivity.this ) );
+        mWebView.loadUrl( ArticleUrlBuilder.build( mHtmlProvider, mPost.getURL() ) );
       }
       return true;
     case R.id.menu_share:
@@ -181,21 +174,7 @@ public class ArticleReaderActivity extends AppCompatActivity {
   }
 
   private void toggleSwipeRefreshLayout() {
-    mSwipeRefreshLayout.setEnabled(Settings.isPullDownRefresh(ArticleReaderActivity.this));
-  }
-
-  @SuppressWarnings("deprecation")
-  public static String getArticleViewURL( HNPost post, String htmlProvider, Context c ) {
-    String encodedURL = URLEncoder.encode( post.getURL() );
-    if (htmlProvider.equals( c.getString( R.string.pref_htmlprovider_viewtext ) )) {
-      return HTMLPROVIDER_PREFIX_VIEWTEXT + encodedURL;
-    } else if (htmlProvider.equals( c.getString( R.string.pref_htmlprovider_google ) )) {
-      return HTMLPROVIDER_PREFIX_GOOGLE + encodedURL;
-    } else if (htmlProvider.equals( c.getString( R.string.pref_htmlprovider_instapaper ) )) {
-      return HTMLPROVIDER_PREFIX_INSTAPAPER + encodedURL;
-    } else {
-      return post.getURL();
-    }
+    mSwipeRefreshLayout.setEnabled(mReadingPrefs.isPullDownRefresh());
   }
 
   @Override
@@ -256,7 +235,7 @@ public class ArticleReaderActivity extends AppCompatActivity {
   }
 
   private void setShowRefreshing(boolean showRefreshing) {
-    if (!Settings.isPullDownRefresh(ArticleReaderActivity.this)) {
+    if (!mReadingPrefs.isPullDownRefresh()) {
       mShouldShowRefreshing = showRefreshing;
       supportInvalidateOptionsMenu();
     }
