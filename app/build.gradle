@@ -1,0 +1,72 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.application'
+
+dependencies {
+    annotationProcessor "org.androidannotations:androidannotations:4.8.0"
+    implementation "org.androidannotations:androidannotations-api:4.8.0"
+
+    implementation "androidx.core:core:1.9.0"
+    implementation "androidx.legacy:legacy-support-core-utils:1.0.0"
+    implementation "androidx.appcompat:appcompat:1.5.1"
+    implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
+
+    implementation "cz.msebera.android:httpclient:4.5.8"
+
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+android {
+    compileOptions {
+        encoding "UTF-8"
+    }
+    compileSdkVersion 33
+
+    defaultConfig {
+        applicationId "com.manuelmaly.hn"
+        minSdkVersion 14
+        targetSdkVersion 33
+        versionCode 26
+        versionName "1.9.16"
+    }
+
+    signingConfigs {
+        def props = new Properties()
+        props.load(new FileInputStream(rootProject.file("release.properties")))
+
+        release {
+            storeFile new File(props.keyStore.toString())
+            storePassword props.keyStorePassword
+            keyAlias props.keyAlias
+            keyPassword props.keyAliasPassword
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+
+            applicationVariants.all { variant ->
+                variant.outputs.each { output ->
+                    def outputFile = output.outputFileName
+                    if (outputFile != null && outputFile.endsWith('.apk')) {
+                        def fileName = outputFile.replace('.apk',
+                                "-v${versionName}-b${versionCode}.apk")
+                        output.outputFileName = fileName
+                    }
+                }
+            }
+        }
+
+        debug {
+
+        }
+    }
+    namespace 'com.manuelmaly.hn'
+}
