@@ -4,6 +4,7 @@ import android.os.AsyncTask;
 import android.util.Log;
 
 import com.manuelmaly.hn.App;
+import com.manuelmaly.hn.feed.FeedType;
 import com.manuelmaly.hn.model.HNCommentTreeNode;
 import com.manuelmaly.hn.model.HNFeed;
 import com.manuelmaly.hn.model.HNPostComments;
@@ -19,24 +20,29 @@ import java.util.List;
 
 public class FileUtil {
 
-    private static final String LAST_HNFEED_FILENAME = "lastHNFeed";
     private static final String LAST_HNPOSTCOMMENTS_FILENAME_PREFIX = "lastHNPostComments";
     private static final String TAG = "FileUtil";
 
     public abstract static class GetLastHNFeedTask extends AsyncTask<Void, Void, HNFeed> {
+        private final FeedType mFeedType;
+
+        public GetLastHNFeedTask(FeedType feedType) {
+            mFeedType = feedType;
+        }
+
         @Override
         protected HNFeed doInBackground(Void... params) {
-            return getLastHNFeed();
+            return getLastHNFeed(mFeedType);
         }
     }
 
     /*
-     * Returns null if no last feed was found or could not be parsed.
+     * Returns null if no cached feed was found for this category or it could not be parsed.
      */
-    private static HNFeed getLastHNFeed() {
+    private static HNFeed getLastHNFeed(FeedType feedType) {
         ObjectInputStream obj = null;
         try {
-            obj = new ObjectInputStream(new FileInputStream(getLastHNFeedFilePath()));
+            obj = new ObjectInputStream(new FileInputStream(getLastHNFeedFilePath(feedType)));
             Object rawHNFeed = obj.readObject();
             if (rawHNFeed instanceof HNFeed)
                 return (HNFeed) rawHNFeed;
@@ -47,19 +53,19 @@ public class FileUtil {
                 try {
                     obj.close();
                 } catch (IOException e) {
-                    Log.e(TAG, "Couldn't close last NH feed file :(", e);
+                    Log.e(TAG, "Couldn't close last HN feed file :(", e);
                 }
             }
         }
         return null;
     }
 
-    public static void setLastHNFeed(final HNFeed hnFeed) {
+    public static void setLastHNFeed(final HNFeed hnFeed, final FeedType feedType) {
         Run.inBackground(new Runnable() {
             public void run() {
                 ObjectOutputStream os = null;
                 try {
-                    os = new ObjectOutputStream(new FileOutputStream(getLastHNFeedFilePath()));
+                    os = new ObjectOutputStream(new FileOutputStream(getLastHNFeedFilePath(feedType)));
                     os.writeObject(hnFeed);
                 } catch (Exception e) {
                     Log.e(TAG, "Could not save last HNFeed to file :(", e);
@@ -68,7 +74,7 @@ public class FileUtil {
                         try {
                             os.close();
                         } catch (IOException e) {
-                            Log.e(TAG, "Couldn't close last NH feed file :(", e);
+                            Log.e(TAG, "Couldn't close last HN feed file :(", e);
                         }
                     }
                 }
@@ -76,9 +82,9 @@ public class FileUtil {
         });
     }
 
-    private static String getLastHNFeedFilePath() {
+    private static String getLastHNFeedFilePath(FeedType feedType) {
         File dataDir = App.getInstance().getFilesDir();
-        return dataDir.getAbsolutePath() + File.pathSeparator + LAST_HNFEED_FILENAME;
+        return dataDir.getAbsolutePath() + File.separator + feedType.cacheFileName();
     }
 
     public abstract static class GetLastHNPostCommentsTask extends AsyncTask<String, Void, HNPostComments> {

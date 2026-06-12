@@ -10,8 +10,6 @@ import com.manuelmaly.hn.server.HNCredentials;
 import com.manuelmaly.hn.server.IAPICommand;
 import com.manuelmaly.hn.server.IAPICommand.RequestType;
 import com.manuelmaly.hn.server.StringDownloadCommand;
-import com.manuelmaly.hn.util.FileUtil;
-import com.manuelmaly.hn.util.Run;
 
 import java.util.HashMap;
 
@@ -27,6 +25,14 @@ public abstract class HNFeedTaskBase extends BaseTask<HNFeed> {
     }
 
     protected abstract String getFeedURL();
+
+    /**
+     * Called on a background thread after a feed page has been parsed successfully. Subclasses
+     * override this to persist the full feed to the per-feed offline cache. Default is a no-op,
+     * which is what load-more wants: it must NOT overwrite the cache with just a partial extra page.
+     */
+    protected void onResultParsed(HNFeed result) {
+    }
 
     class HNFeedTaskRunnable extends CancelableRunnable {
 
@@ -48,11 +54,7 @@ public abstract class HNFeedTaskBase extends BaseTask<HNFeed> {
                 HNFeedParser feedParser = new HNFeedParser();
                 try {
                     mResult = feedParser.parse(mFeedDownload.getResponseContent());
-                    Run.inBackground(new Runnable() {
-                        public void run() {
-                            FileUtil.setLastHNFeed(mResult);
-                        }
-                    });
+                    onResultParsed(mResult);
                 } catch (Exception e) {
                     mResult = null;
                     Log.e("HNFeedTask", "HNFeed Parser Error :(", e);

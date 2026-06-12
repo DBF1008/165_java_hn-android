@@ -1,11 +1,14 @@
 package com.manuelmaly.hn;
 
+import com.manuelmaly.hn.feed.FeedNavigationController;
+import com.manuelmaly.hn.feed.FeedSession;
+import com.manuelmaly.hn.feed.FeedType;
 import com.manuelmaly.hn.model.HNFeed;
 import com.manuelmaly.hn.model.HNPost;
 import com.manuelmaly.hn.parser.BaseHTMLParser;
 import com.manuelmaly.hn.server.HNCredentials;
+import com.manuelmaly.hn.task.HNFeedTask;
 import com.manuelmaly.hn.task.HNFeedTaskLoadMore;
-import com.manuelmaly.hn.task.HNFeedTaskMainFeed;
 import com.manuelmaly.hn.task.HNVoteTask;
 import com.manuelmaly.hn.task.ITaskFinishedHandler;
 import com.manuelmaly.hn.util.FileUtil;
@@ -19,13 +22,13 @@ import org.androidannotations.annotations.ViewById;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
 import android.database.DataSetObserver;
+import android.graphics.Paint;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Parcelable;
@@ -33,8 +36,8 @@ import android.os.Parcelable;
 import androidx.core.view.MenuItemCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
-import android.util.Log;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -56,6 +59,7 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -70,6 +74,9 @@ public class MainActivity extends BaseListActivity implements
     @ViewById(R.id.main_root)
     LinearLayout mRootView;
 
+    @ViewById(R.id.main_feed_tabs)
+    LinearLayout mFeedTabs;
+
     @ViewById(R.id.main_swiperefreshlayout)
     SwipeRefreshLayout mSwipeRefreshLayout;
 
@@ -77,7 +84,9 @@ public class MainActivity extends BaseListActivity implements
     LayoutInflater mInflater;
 
     TextView mEmptyListPlaceholder;
-    HNFeed mFeed;
+    /** Owns all per-feed state (current feed, per-feed posts/scroll, offline fallback). */
+    FeedNavigationController mNav;
+    Map<FeedType, TextView> mTabViews;
     PostsAdapter mPostsListAdapter;
     Set<HNPost> mUpvotedPosts;
     Set<Integer> mAlreadyRead;
@@ -92,9 +101,16 @@ public class MainActivity extends BaseListActivity implements
     private static final int TASKCODE_LOAD_MORE_POSTS = 20;
     private static final int TASKCODE_VOTE = 100;
 
-    private static final String LIST_STATE = "listState";
+    private static final String STATE_CURRENT_FEED = "currentFeed";
+    private static final String STATE_SCROLL_PREFIX = "scroll_";
     private static final String ALREADY_READ_ARTICLES_KEY = "HN_ALREADY_READ";
-    private Parcelable mListState = null;
+
+    /**
+     * When true, the current feed's saved scroll position should be re-applied once its list has
+     * data. Set on a feed switch and on state restore; consumed by {@link #applyPendingScrollIfNeeded()}.
+     * It is intentionally NOT set on a plain refresh, so refreshing doesn't jump the user around.
+     */
+    private boolean mPendingScrollRestore = false;
 
     boolean mShouldShowRefreshing = false;
 
@@ -123,7 +139,9 @@ public class MainActivity extends BaseListActivity implements
 
     @AfterViews
     public void init() {
-        mFeed = new HNFeed(new ArrayList<HNPost>(), null, "");
+        FeedType initial = FeedType.fromId(Settings.getSelectedFeedId(this), FeedType.getDefault());
+        mNav = new FeedNavigationController(FeedType.ordered(), initial);
+
         mPostsListAdapter = new PostsAdapter();
         mUpvotedPosts = new HashSet<HNPost>();
 
@@ -136,6 +154,8 @@ public class MainActivity extends BaseListActivity implements
         mTitleColor = getResources().getColor(R.color.dark_gray_post_title);
         mTitleReadColor = getResources().getColor(R.color.gray_post_title_read);
 
+        buildFeedTabs();
+
         toggleSwipeRefreshLayout();
 
         mSwipeRefreshLayout.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
@@ -146,22 +166,27 @@ public class MainActivity extends BaseListActivity implements
         });
 
         loadAlreadyReadCache();
-        loadIntermediateFeedFromStore();
-        startFeedLoading();
+        // The actual feed load happens in onResume(), so it runs against the feed selected by any
+        // restored instance state rather than always the settings default.
     }
 
     @Override
     protected void onResume() {
         super.onResume();
 
-        boolean registeredUserChanged = mFeed.getUserAcquiredFor() != null
-                && (!mFeed.getUserAcquiredFor().equals(
-                        Settings.getUserName(this)));
+        // Reload everything if a new user logged in (upvote URLs are user-specific).
+        HNFeed currentFeed = mNav.currentSession().getFeed();
+        boolean registeredUserChanged = currentFeed.getUserAcquiredFor() != null
+                && !currentFeed.getUserAcquiredFor().equals(Settings.getUserName(this));
 
-        // We want to reload the feed if a new user logged in
         if (HNCredentials.isInvalidated() || registeredUserChanged) {
-            showFeed(new HNFeed(new ArrayList<HNPost>(), null, ""));
-            startFeedLoading();
+            for (FeedType type : mNav.feeds()) {
+                FeedSession session = mNav.session(type);
+                session.setFeed(new HNFeed());
+                session.setFromCache(false);
+                session.setEverLoaded(false);
+            }
+            mPostsListAdapter.notifyDataSetChanged();
         }
 
         // refresh if font size changed
@@ -169,11 +194,9 @@ public class MainActivity extends BaseListActivity implements
             mPostsListAdapter.notifyDataSetChanged();
         }
 
-        // restore vertical scrolling position if applicable
-        if (mListState != null) {
-            mPostsList.onRestoreInstanceState(mListState);
-        }
-        mListState = null;
+        updateTabHighlight();
+        ensureCurrentFeedLoaded();
+        applyPendingScrollIfNeeded();
 
         // User may have toggled pull-down refresh, so toggle the SwipeRefreshLayout.
         toggleSwipeRefreshLayout();
@@ -220,33 +243,188 @@ public class MainActivity extends BaseListActivity implements
         mSwipeRefreshLayout.setEnabled(Settings.isPullDownRefresh(MainActivity.this));
     }
 
-    @Override
-    public void onTaskFinished(int taskCode, TaskResultCode code,
-            HNFeed result, Object tag) {
-        if (taskCode == TASKCODE_LOAD_FEED) {
-            if (code.equals(TaskResultCode.Success)
-                    && mPostsListAdapter != null) {
-                showFeed(result);
-            } else
-                if (!code.equals(TaskResultCode.Success)) {
-                    Toast.makeText(this,
-                            getString(R.string.error_unable_to_retrieve_feed),
-                            Toast.LENGTH_SHORT).show();
-                }
-        } else
-            if (taskCode == TASKCODE_LOAD_MORE_POSTS) {
-                if (!code.equals(TaskResultCode.Success) || result == null || result.getPosts() == null || result.getPosts().size() == 0) {
-                    Toast.makeText(this,
-                            getString(R.string.error_unable_to_load_more),
-                            Toast.LENGTH_SHORT).show();
-                  mFeed.setLoadedMore(true); // reached the end.
-                }
+    // ------------------------------------------------------------------
+    // Feed category tab strip
+    // ------------------------------------------------------------------
 
-                mFeed.appendLoadMoreFeed(result);
+    private void buildFeedTabs() {
+        mTabViews = new EnumMap<FeedType, TextView>(FeedType.class);
+        mFeedTabs.removeAllViews();
+
+        int padH = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16,
+                getResources().getDisplayMetrics());
+        int padV = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 12,
+                getResources().getDisplayMetrics());
+
+        for (final FeedType type : mNav.feeds()) {
+            TextView tab = new TextView(this);
+            tab.setText(type.getTitle());
+            tab.setTypeface(FontHelper.getComfortaa(this, true));
+            tab.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            tab.setPadding(padH, padV, padH, padV);
+            tab.setGravity(Gravity.CENTER);
+            tab.setClickable(true);
+            tab.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    selectFeed(type);
+                }
+            });
+            mFeedTabs.addView(tab);
+            mTabViews.put(type, tab);
+        }
+
+        updateTabHighlight();
+    }
+
+    private void updateTabHighlight() {
+        if (mTabViews == null) {
+            return;
+        }
+        for (Map.Entry<FeedType, TextView> entry : mTabViews.entrySet()) {
+            boolean selected = entry.getKey() == mNav.current();
+            TextView tab = entry.getValue();
+            tab.setTextColor(selected ? mTitleColor : mTitleReadColor);
+            if (selected) {
+                tab.setPaintFlags(tab.getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG);
+            } else {
+                tab.setPaintFlags(tab.getPaintFlags() & ~Paint.UNDERLINE_TEXT_FLAG);
+            }
+        }
+    }
+
+    /** Switches the visible feed, preserving the outgoing feed's scroll and lazily loading the new one. */
+    private void selectFeed(FeedType type) {
+        if (type == mNav.current()) {
+            return;
+        }
+
+        // Stash the scroll position of the feed we're leaving, then switch.
+        Parcelable outgoingScroll = mPostsList.onSaveInstanceState();
+        mNav.switchTo(type, outgoingScroll);
+        Settings.setSelectedFeedId(this, type.getId());
+
+        updateTabHighlight();
+        mPendingScrollRestore = true;
+        mPostsListAdapter.notifyDataSetChanged();
+        applyPendingScrollIfNeeded();
+
+        FeedSession session = mNav.currentSession();
+        if (session.isEmpty()) {
+            if (HNFeedTask.isRunning(this, type)) {
+                setShowRefreshing(true);
+            } else {
+                loadCachedFeed(type);
+                startFeedLoading();
+            }
+        } else {
+            setShowRefreshing(session.isLoading());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Loading
+    // ------------------------------------------------------------------
+
+    private void ensureCurrentFeedLoaded() {
+        FeedSession session = mNav.currentSession();
+        if (session.isEmpty() && !HNFeedTask.isRunning(this, mNav.current())) {
+            loadCachedFeed(mNav.current());
+            startFeedLoading();
+        }
+    }
+
+    private void startFeedLoading() {
+        FeedType type = mNav.current();
+        mNav.currentSession().setLoading(true);
+        setShowRefreshing(true);
+        HNFeedTask.startOrReattach(this, this, type, TASKCODE_LOAD_FEED);
+    }
+
+    /** Kicks an async read of this feed's offline cache for a fast first paint. */
+    private void loadCachedFeed(FeedType type) {
+        new GetLastHNFeedTask(type).execute((Void) null);
+    }
+
+    private HNFeed currentFeed() {
+        return mNav.currentSession().getFeed();
+    }
+
+    /** True if a cached feed may be shown for the current user (mirrors the live-load gating). */
+    private boolean isCacheAcceptable(HNFeed cached) {
+        return cached != null
+                && cached.getPosts() != null
+                && !cached.getPosts().isEmpty()
+                && cached.getUserAcquiredFor() != null
+                && cached.getUserAcquiredFor().equals(Settings.getUserName(this));
+    }
+
+    @Override
+    public void onTaskFinished(int taskCode, TaskResultCode code, HNFeed result, Object tag) {
+        FeedType type = (tag instanceof FeedType) ? (FeedType) tag : mNav.current();
+        boolean isCurrent = (type == mNav.current());
+
+        if (taskCode == TASKCODE_LOAD_FEED) {
+            boolean success = code.equals(TaskResultCode.Success) && result != null;
+            boolean resultNonEmpty = result != null && result.getPosts() != null
+                    && !result.getPosts().isEmpty();
+
+            // Cache is supplied via the async loadCachedFeed() paint, so pass null here; the
+            // controller's "keep what we have" rule preserves any already-painted cached posts.
+            mNav.onLoaded(type, success, resultNonEmpty, Settings.getUserName(this), result, null);
+
+            if (isCurrent && mPostsListAdapter != null) {
                 mPostsListAdapter.notifyDataSetChanged();
+                applyPendingScrollIfNeeded();
             }
 
-        setShowRefreshing(false);
+            if (isCurrent && !success && !code.equals(TaskResultCode.CancelledByUser)
+                    && mNav.session(type).isEmpty()) {
+                Toast.makeText(this, getString(R.string.error_unable_to_retrieve_feed),
+                        Toast.LENGTH_SHORT).show();
+            }
+        } else if (taskCode == TASKCODE_LOAD_MORE_POSTS) {
+            FeedSession session = mNav.session(type);
+            if (!code.equals(TaskResultCode.Success) || result == null || result.getPosts() == null
+                    || result.getPosts().size() == 0) {
+                if (isCurrent) {
+                    Toast.makeText(this, getString(R.string.error_unable_to_load_more),
+                            Toast.LENGTH_SHORT).show();
+                }
+                session.getFeed().setLoadedMore(true); // reached the end.
+            }
+            session.getFeed().appendLoadMoreFeed(result);
+            if (isCurrent) {
+                mPostsListAdapter.notifyDataSetChanged();
+            }
+        }
+
+        if (isCurrent) {
+            mNav.currentSession().setLoading(false);
+            setShowRefreshing(false);
+        }
+    }
+
+    /** Re-applies the current feed's saved scroll once its list has content (used after switch/restore). */
+    private void applyPendingScrollIfNeeded() {
+        if (!mPendingScrollRestore) {
+            return;
+        }
+        FeedSession session = mNav.currentSession();
+        if (session.isEmpty()) {
+            return; // wait until data lands, then this is called again
+        }
+        mPendingScrollRestore = false;
+        Object scroll = session.getScrollState();
+        if (scroll instanceof Parcelable) {
+            final Parcelable parcelable = (Parcelable) scroll;
+            mPostsList.post(new Runnable() {
+                @Override
+                public void run() {
+                    mPostsList.onRestoreInstanceState(parcelable);
+                }
+            });
+        }
     }
 
     @Background
@@ -285,48 +463,33 @@ public class MainActivity extends BaseListActivity implements
         mAlreadyRead.add(title.hashCode());
     }
 
-    private void showFeed(HNFeed feed) {
-        mFeed = feed;
-        mPostsListAdapter.notifyDataSetChanged();
-    }
-
-    private void loadIntermediateFeedFromStore() {
-        new GetLastHNFeedTask().execute((Void) null);
-        long start = System.currentTimeMillis();
-
-        Log.i("",
-                "Loading intermediate feed took ms:"
-                        + (System.currentTimeMillis() - start));
-    }
-
+    /**
+     * Reads a feed's offline cache off the UI thread; paints it only if the feed hasn't already been
+     * populated by a live load and the cache belongs to the current user.
+     */
     class GetLastHNFeedTask extends FileUtil.GetLastHNFeedTask {
-        ProgressDialog progress;
+        private final FeedType mType;
 
-        @Override
-        protected void onPreExecute() {
-            progress = new ProgressDialog(MainActivity.this);
-            progress.setMessage("Loading");
-            progress.show();
+        GetLastHNFeedTask(FeedType type) {
+            super(type);
+            mType = type;
         }
 
         @Override
         protected void onPostExecute(HNFeed result) {
-            if (progress != null && progress.isShowing()) {
-                progress.dismiss();
+            if (result == null) {
+                return;
             }
-
-            if (result != null
-                    && result.getUserAcquiredFor() != null
-                    && result.getUserAcquiredFor().equals(
-                            Settings.getUserName(App.getInstance()))) {
-                showFeed(result);
+            FeedSession session = mNav.session(mType);
+            if (session.isEmpty() && isCacheAcceptable(result)) {
+                session.setFeed(result);
+                session.setFromCache(true);
+                if (mType == mNav.current()) {
+                    mPostsListAdapter.notifyDataSetChanged();
+                    applyPendingScrollIfNeeded();
+                }
             }
         }
-    }
-
-    private void startFeedLoading() {
-        setShowRefreshing(true);
-        HNFeedTaskMainFeed.startOrReattach(this, this, TASKCODE_LOAD_FEED);
     }
 
     private boolean refreshFontSizes() {
@@ -358,14 +521,34 @@ public class MainActivity extends BaseListActivity implements
     @Override
     protected void onRestoreInstanceState(Bundle state) {
         super.onRestoreInstanceState(state);
-        mListState = state.getParcelable(LIST_STATE);
+        String currentId = state.getString(STATE_CURRENT_FEED);
+        if (currentId != null) {
+            mNav.setCurrent(FeedType.fromId(currentId, mNav.current()));
+        }
+        for (FeedType type : mNav.feeds()) {
+            Parcelable scroll = state.getParcelable(STATE_SCROLL_PREFIX + type.getId());
+            if (scroll != null) {
+                mNav.session(type).setScrollState(scroll);
+            }
+        }
+        mPendingScrollRestore = true;
     }
 
     @Override
     protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
-        mListState = mPostsList.onSaveInstanceState();
-        state.putParcelable(LIST_STATE, mListState);
+        // Capture the currently visible scroll into the current session first.
+        mNav.currentSession().setScrollState(mPostsList.onSaveInstanceState());
+
+        state.putString(STATE_CURRENT_FEED, mNav.current().getId());
+        for (FeedType type : mNav.feeds()) {
+            Object scroll = mNav.session(type).getScrollState();
+            if (scroll instanceof Parcelable) {
+                state.putParcelable(STATE_SCROLL_PREFIX + type.getId(), (Parcelable) scroll);
+            }
+        }
+        // Feed post data is intentionally NOT serialized into the Bundle (it can be large); it is
+        // restored from each feed's file cache and a fresh network load on recreation.
     }
 
     class VoteTaskFinishedHandler implements ITaskFinishedHandler<Boolean> {
@@ -398,18 +581,18 @@ public class MainActivity extends BaseListActivity implements
 
         @Override
         public int getCount() {
-            int posts = mFeed.getPosts().size();
+            int posts = currentFeed().getPosts().size();
             if (posts == 0) {
                 return 0;
             } else {
-                return posts + (mFeed.isLoadedMore() ? 0 : 1);
+                return posts + (currentFeed().isLoadedMore() ? 0 : 1);
             }
         }
 
         @Override
         public HNPost getItem(int position) {
             if (getItemViewType(position) == VIEWTYPE_POST) {
-                return mFeed.getPosts().get(position);
+                return currentFeed().getPosts().get(position);
             } else {
                 return null;
             }
@@ -423,7 +606,7 @@ public class MainActivity extends BaseListActivity implements
 
         @Override
         public int getItemViewType(int position) {
-            if (position < mFeed.getPosts().size()) {
+            if (position < currentFeed().getPosts().size()) {
                 return VIEWTYPE_POST;
             } else {
                 return VIEWTYPE_LOADMORE;
@@ -539,7 +722,7 @@ public class MainActivity extends BaseListActivity implements
                 final ImageView imageView = (ImageView) convertView
                         .findViewById(R.id.main_list_item_loadmore_loadingimage);
                 if (HNFeedTaskLoadMore.isRunning(MainActivity.this,
-                        TASKCODE_LOAD_MORE_POSTS)) {
+                        mNav.current())) {
                     textView.setVisibility(View.INVISIBLE);
                     imageView.setVisibility(View.VISIBLE);
                     convertView.setClickable(false);
@@ -553,8 +736,8 @@ public class MainActivity extends BaseListActivity implements
                         imageView.setVisibility(View.VISIBLE);
                         convertViewFinal.setClickable(false);
                         HNFeedTaskLoadMore.start(MainActivity.this,
-                                MainActivity.this, mFeed,
-                                TASKCODE_LOAD_MORE_POSTS);
+                                MainActivity.this, currentFeed(),
+                                mNav.current(), TASKCODE_LOAD_MORE_POSTS);
                         setShowRefreshing(true);
                     }
                 });

@@ -6,6 +6,22 @@
     android:contentDescription="@string/more"
     android:orientation="vertical" >
 
+    <HorizontalScrollView
+        android:id="@+id/main_feed_tabs_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/peach"
+        android:fillViewport="true"
+        android:scrollbars="none" >
+
+        <LinearLayout
+            android:id="@+id/main_feed_tabs"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+
+    </HorizontalScrollView>
+
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/main_swiperefreshlayout"
         android:layout_width="match_parent"

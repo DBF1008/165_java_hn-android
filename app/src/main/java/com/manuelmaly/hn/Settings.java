@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.preference.PreferenceManager;
 
+import com.manuelmaly.hn.feed.FeedType;
+
 public class Settings {
     
     public static final String PREF_FONTSIZE = "pref_fontsize";
@@ -12,6 +14,7 @@ public class Settings {
     public static final String PREF_USER = "pref_user";
     public static final String PREF_REPORTING = "pref_crashlytics";
     public static final String PREF_PULLDOWNREFRESH = "pref_pulldownrefresh";
+    public static final String PREF_SELECTED_FEED = "pref_selected_feed";
     
     public static final String USER_DATA_SEPARATOR = ":";
     
@@ -33,6 +36,17 @@ public class Settings {
     public static boolean isPullDownRefresh(Context c) {
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(c);
         return sharedPref.getBoolean(PREF_PULLDOWNREFRESH, false);
+    }
+
+    /** The feed category last selected by the user (persists across app restarts). */
+    public static String getSelectedFeedId(Context c) {
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(c);
+        return sharedPref.getString(PREF_SELECTED_FEED, FeedType.getDefault().getId());
+    }
+
+    public static void setSelectedFeedId(Context c, String feedId) {
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(c);
+        sharedPref.edit().putString(PREF_SELECTED_FEED, feedId).commit();
     }
 
     public static boolean isUserLoggedIn(Context c) {
