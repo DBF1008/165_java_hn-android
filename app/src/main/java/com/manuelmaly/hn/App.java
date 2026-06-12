@@ -2,9 +2,9 @@ package com.manuelmaly.hn;
 
 import android.app.Application;
 
-import org.androidannotations.annotations.EApplication;
+import dagger.hilt.android.HiltAndroidApp;
 
-@EApplication
+@HiltAndroidApp
 public class App extends Application {
 
     private static App mInstance;

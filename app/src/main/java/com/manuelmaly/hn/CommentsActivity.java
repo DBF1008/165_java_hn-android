@@ -35,7 +35,7 @@ import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.manuelmaly.hn.login.LoginActivity_;
+import com.manuelmaly.hn.login.LoginActivity;
 import com.manuelmaly.hn.model.HNComment;
 import com.manuelmaly.hn.model.HNCommentTreeNode;
 import com.manuelmaly.hn.model.HNPost;
@@ -44,21 +44,24 @@ import com.manuelmaly.hn.reuse.LinkifiedTextView;
 import com.manuelmaly.hn.task.HNPostCommentsTask;
 import com.manuelmaly.hn.task.HNVoteTask;
 import com.manuelmaly.hn.task.ITaskFinishedHandler;
+import com.manuelmaly.hn.data.network.HNApiClient;
+import com.manuelmaly.hn.data.storage.AppSettings;
+import com.manuelmaly.hn.data.storage.FeedCache;
+import com.manuelmaly.hn.parser.CommentsParser;
 import com.manuelmaly.hn.util.DisplayHelper;
 import com.manuelmaly.hn.util.FileUtil;
 import com.manuelmaly.hn.util.FontHelper;
+import com.manuelmaly.hn.util.Run;
 import com.manuelmaly.hn.util.SpotlightActivity;
 import com.manuelmaly.hn.util.ViewedUtils;
 
-import org.androidannotations.annotations.AfterViews;
-import org.androidannotations.annotations.EActivity;
-import org.androidannotations.annotations.SystemService;
-import org.androidannotations.annotations.ViewById;
+import dagger.hilt.android.AndroidEntryPoint;
+import javax.inject.Inject;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 
-@EActivity(R.layout.comments_activity)
+@AndroidEntryPoint
 public class CommentsActivity extends BaseListActivity implements
         ITaskFinishedHandler<HNPostComments> {
 
@@ -68,16 +71,14 @@ public class CommentsActivity extends BaseListActivity implements
     private static final int ACTIVITY_LOGIN = 136;
     private static final int ACTIVITY_SPOTLIGHT = 137;
 
-    @ViewById(R.id.comments_list)
+    @Inject HNApiClient apiClient;
+    @Inject CommentsParser commentsParser;
+    @Inject FeedCache feedCache;
+    @Inject AppSettings appSettings;
+
     ListView mCommentsList;
-
-    @ViewById(R.id.comments_root)
     LinearLayout mRootView;
-
-    @ViewById(R.id.comments_swiperefreshlayout)
     SwipeRefreshLayout mSwipeRefreshLayout;
-
-    @SystemService
     LayoutInflater mInflater;
 
     LinearLayout mCommentHeader;
@@ -105,7 +106,19 @@ public class CommentsActivity extends BaseListActivity implements
 
     boolean mShouldShowRefreshing = false;
 
-    @AfterViews
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.comments_activity);
+
+        mCommentsList = findViewById(R.id.comments_list);
+        mRootView = findViewById(R.id.comments_root);
+        mSwipeRefreshLayout = findViewById(R.id.comments_swiperefreshlayout);
+        mInflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+
+        init();
+    }
+
     public void init() {
         mPost = (HNPost) getIntent().getSerializableExtra(EXTRA_HNPOST);
         if (mPost == null || mPost.getPostID() == null) {
@@ -124,8 +137,6 @@ public class CommentsActivity extends BaseListActivity implements
         mCommentsListAdapter = new CommentsAdapter();
         mEmptyView = getEmptyTextView(mRootView);
         mCommentsList.setEmptyView(mEmptyView);
-        // Add the header for "Ask HN" text. If there is no text, this will just
-        // be empty
         mCommentsList.addHeaderView(mCommentHeader, null, false);
         mCommentsList.setAdapter(mCommentsListAdapter);
 
@@ -136,12 +147,12 @@ public class CommentsActivity extends BaseListActivity implements
         mActionbarTitle.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (Settings.getHtmlViewer(CommentsActivity.this).equals(
+                if (appSettings.getHtmlViewer().equals(
                         getString(R.string.pref_htmlviewer_browser))) {
 
                     String articleURL = ArticleReaderActivity
                             .getArticleViewURL(mPost, Settings
-                                    .getHtmlProvider(CommentsActivity.this),
+                                    .getHtmlProvider(),
                                     CommentsActivity.this);
                     MainActivity.openURLInBrowser(articleURL,
                             CommentsActivity.this);
@@ -168,21 +179,17 @@ public class CommentsActivity extends BaseListActivity implements
     protected void onResume() {
         super.onResume();
 
-        // refresh if font size changed
         if (refreshFontSizes()) {
             mCommentsListAdapter.notifyDataSetChanged();
         }
 
-        // restore vertical scrolling position if applicable
         if (mListState != null) {
             mCommentsList.onRestoreInstanceState(mListState);
         }
         mListState = null;
 
-        // Only show the spotlight effect the first time
         if (!ViewedUtils.getActivityViewed(this)) {
             Handler handler = new Handler(Looper.getMainLooper());
-            // If we don't delay this there are weird race conditions
             handler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
@@ -192,9 +199,7 @@ public class CommentsActivity extends BaseListActivity implements
             }, 250);
         }
 
-        // User may have toggled pull-down refresh, so toggle the SwipeRefreshLayout.
         toggleSwipeRefreshLayout();
-
     }
 
     @Override
@@ -220,31 +225,28 @@ public class CommentsActivity extends BaseListActivity implements
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
-        case R.id.menu_refresh:
-            startFeedLoading();
-            return true;
-        case android.R.id.home:
-            finish();
-            return true;
-        case R.id.menu_share:
-            Intent shareIntent = new Intent(Intent.ACTION_SEND);
-            shareIntent.setType("text/plain");
-            shareIntent.putExtra(Intent.EXTRA_SUBJECT, mPost.getTitle()
-                    + " | Hacker News");
-            shareIntent
-                    .putExtra(
-                            Intent.EXTRA_TEXT,
-                            "https://news.ycombinator.com/item?id="
-                                    + mPost.getPostID());
-            startActivity(Intent.createChooser(shareIntent,
-                    getString(R.string.share_comments_url)));
-        default:
-            return super.onOptionsItemSelected(item);
+            case R.id.menu_refresh:
+                startFeedLoading();
+                return true;
+            case android.R.id.home:
+                finish();
+                return true;
+            case R.id.menu_share:
+                Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                shareIntent.setType("text/plain");
+                shareIntent.putExtra(Intent.EXTRA_SUBJECT, mPost.getTitle()
+                        + " | Hacker News");
+                shareIntent.putExtra(Intent.EXTRA_TEXT,
+                        "https://news.ycombinator.com/item?id=" + mPost.getPostID());
+                startActivity(Intent.createChooser(shareIntent,
+                        getString(R.string.share_comments_url)));
+            default:
+                return super.onOptionsItemSelected(item);
         }
     }
 
     private void toggleSwipeRefreshLayout() {
-        mSwipeRefreshLayout.setEnabled(Settings.isPullDownRefresh(CommentsActivity.this));
+        mSwipeRefreshLayout.setEnabled(appSettings.isPullDownRefresh());
     }
 
     @Override
@@ -266,51 +268,47 @@ public class CommentsActivity extends BaseListActivity implements
         if (comments.getHeaderHtml() != null
                 && mCommentHeaderText.getVisibility() != View.VISIBLE) {
             mCommentHeaderText.setVisibility(View.VISIBLE);
-            // We trim it here to get rid of pesky newlines that come from
-            // closing <p> tags
             mCommentHeaderText.setText(Html.fromHtml(comments.getHeaderHtml())
                     .toString().trim());
-
-            // Linkify.ALL does some highlighting where we don't want it
-            // (i.e if you just put certain tlds in) so we use this custom
-            // regex.
-            Linkify.addLinks(mCommentHeaderText, Linkify.WEB_URLS); //
+            Linkify.addLinks(mCommentHeaderText, Linkify.WEB_URLS);
         }
 
         mComments = comments;
-
         mCommentsListAdapter.notifyDataSetChanged();
     }
 
     private void loadIntermediateCommentsFromStore() {
-        new GetLastHNPostCommentsTask().execute(mPost.getPostID());
-    }
-
-    class GetLastHNPostCommentsTask extends FileUtil.GetLastHNPostCommentsTask {
-        @Override
-        protected void onPostExecute(HNPostComments result) {
-            boolean registeredUserChanged = result != null
-                    && result.getUserAcquiredFor() != null
-                    && (!result.getUserAcquiredFor().equals(
-                            Settings.getUserName(CommentsActivity.this)));
-            // Only show comments if we last fetched them for the current user
-            // and we have comments
-            if (!registeredUserChanged && result != null) {
-                showComments(result);
-            } else {
-                updateEmptyView();
+        Run.inBackground(new Runnable() {
+            @Override
+            public void run() {
+                final HNPostComments result = feedCache.getLastComments(mPost.getPostID());
+                Run.onUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        boolean registeredUserChanged = result != null
+                                && result.getUserAcquiredFor() != null
+                                && (!result.getUserAcquiredFor().equals(
+                                        appSettings.getUserName()));
+                        if (!registeredUserChanged && result != null) {
+                            showComments(result);
+                        } else {
+                            updateEmptyView();
+                        }
+                    }
+                }, CommentsActivity.this);
             }
-        }
+        });
     }
 
     private void startFeedLoading() {
         mHaveLoadedPosts = false;
         setShowRefreshing(true);
-        HNPostCommentsTask.startOrReattach(this, this, mPost.getPostID(), 0);
+        HNPostCommentsTask.startOrReattach(this, this, mPost.getPostID(), 0,
+                apiClient, commentsParser, feedCache);
     }
 
     private boolean refreshFontSizes() {
-        final String fontSize = Settings.getFontSize(this);
+        final String fontSize = appSettings.getFontSize();
         if ((mCurrentFontSize == null) || (!mCurrentFontSize.equals(fontSize))) {
             mCurrentFontSize = fontSize;
             if (fontSize.equals(getString(R.string.pref_fontsize_small))) {
@@ -332,7 +330,7 @@ public class CommentsActivity extends BaseListActivity implements
 
     private void vote(String voteURL, HNComment comment) {
         HNVoteTask.start(voteURL, this, new VoteTaskFinishedHandler(),
-                TASKCODE_VOTE, comment);
+                TASKCODE_VOTE, comment, apiClient);
     }
 
     @Override
@@ -352,7 +350,6 @@ public class CommentsActivity extends BaseListActivity implements
         if (mHaveLoadedPosts) {
             mEmptyView.setText(getString(R.string.no_comments));
         }
-
         mHaveLoadedPosts = true;
     }
 
@@ -369,7 +366,7 @@ public class CommentsActivity extends BaseListActivity implements
     }
 
     private void openArticleReader() {
-        Intent intent = new Intent(this, ArticleReaderActivity_.class);
+        Intent intent = new Intent(this, ArticleReaderActivity.class);
         intent.putExtra(CommentsActivity.EXTRA_HNPOST, mPost);
         if (getIntent().getStringExtra(
                 ArticleReaderActivity.EXTRA_HTMLPROVIDER_OVERRIDE) != null) {
@@ -386,14 +383,11 @@ public class CommentsActivity extends BaseListActivity implements
     }
 
     private void initCommentsHeader() {
-        // Don't worry about reallocating this stuff it has already been called
         if (mCommentHeader == null) {
             mCommentHeader = new LinearLayout(this);
             mCommentHeader.setOrientation(LinearLayout.VERTICAL);
             mCommentHeaderText = new TextView(this);
             mCommentHeader.addView(mCommentHeaderText);
-            // Division by 2 just gave the right feel, I'm unsure how well it
-            // will work across platforms
             mCommentHeaderText.setPadding(mCommentLevelIndentPx,
                     mCommentLevelIndentPx / 2, mCommentLevelIndentPx / 2,
                     mCommentLevelIndentPx / 2);
@@ -401,7 +395,6 @@ public class CommentsActivity extends BaseListActivity implements
             mCommentHeaderText.setTextColor(getResources().getColor(
                     R.color.gray_comments_information));
 
-            // Make it look like the header is just another list item.
             View v = new View(this);
             v.setBackgroundColor(getResources().getColor(
                     R.color.gray_comments_divider));
@@ -412,7 +405,7 @@ public class CommentsActivity extends BaseListActivity implements
     }
 
     private void setShowRefreshing(boolean showRefreshing) {
-        if (!Settings.isPullDownRefresh(CommentsActivity.this)) {
+        if (!appSettings.isPullDownRefresh()) {
             mShouldShowRefreshing = showRefreshing;
             supportInvalidateOptionsMenu();
         }
@@ -433,19 +426,18 @@ public class CommentsActivity extends BaseListActivity implements
 
         public LongPressMenuListAdapter(HNComment comment) {
             mComment = comment;
-            mIsLoggedIn = Settings.isUserLoggedIn(CommentsActivity.this);
+            mIsLoggedIn = appSettings.isUserLoggedIn();
             mUpVotingEnabled = !mIsLoggedIn
-                    || (mComment.getUpvoteUrl(Settings
-                            .getUserName(CommentsActivity.this)) != null && !mVotedComments
+                    || (mComment.getUpvoteUrl(appSettings
+                            .getUserName()) != null && !mVotedComments
                             .contains(mComment));
             mDownVotingEnabled = mIsLoggedIn
-                    && (mComment.getDownvoteUrl(Settings
-                            .getUserName(CommentsActivity.this)) != null && !mVotedComments
+                    && (mComment.getDownvoteUrl(appSettings
+                            .getUserName()) != null && !mVotedComments
                             .contains(mComments));
 
             mItems = new ArrayList<CharSequence>();
 
-            // Figure out why this is false
             if (mUpVotingEnabled) {
                 mItems.add(getString(R.string.upvote));
             }
@@ -463,7 +455,7 @@ public class CommentsActivity extends BaseListActivity implements
                 mItems.add(getString(R.string.expand_comment));
             }
 
-            if (comment.getTreeNode().getParent() != null){
+            if (comment.getTreeNode().getParent() != null) {
                 mItems.add(getString(R.string.collapse_thread));
             }
         }
@@ -530,9 +522,6 @@ public class CommentsActivity extends BaseListActivity implements
 
         @Override
         public boolean isEnabled(int position) {
-            // Top item will always be "upvote" or "already upvoted"
-            // So, if upvoting is not enabled, this must be already upvoted
-            // In that case we want to disable it
             if (!mUpVotingEnabled && position == 0) {
                 return false;
             }
@@ -543,33 +532,26 @@ public class CommentsActivity extends BaseListActivity implements
         public void onClick(DialogInterface dialog, int item) {
             String clickedText = getItem(item).toString();
 
-            // If the clicked text is "upvote", then we want to upvote if
-            // the user is logged in. If the user is not logged in then
-            // we want to tell the user to login
             if (clickedText.equals(getApplicationContext().getString(
                     R.string.upvote))) {
                 if (!mIsLoggedIn) {
                     setCommentToUpvote(mComment);
                     startActivityForResult(new Intent(getApplicationContext(),
-                            LoginActivity_.class), ACTIVITY_LOGIN);
+                            LoginActivity.class), ACTIVITY_LOGIN);
                 } else {
-                    vote(mComment.getUpvoteUrl(Settings
-                            .getUserName(CommentsActivity.this)), mComment);
+                    vote(mComment.getUpvoteUrl(appSettings
+                            .getUserName()), mComment);
                 }
             } else if (clickedText.equals(getApplicationContext().getString(
                     R.string.downvote))) {
-                // We don't need to test if the user is logged in here
-                // because
-                // They won't have a dowvnote url to see if they aren't
-                // logged in
-                vote(mComment.getDownvoteUrl(Settings
-                        .getUserName(CommentsActivity.this)), mComment);
-            } else if(clickedText.equals(getApplicationContext().getString(
+                vote(mComment.getDownvoteUrl(appSettings
+                        .getUserName()), mComment);
+            } else if (clickedText.equals(getApplicationContext().getString(
                     R.string.collapse_thread))) {
                 HNCommentTreeNode mRootNode = mComment.getTreeNode().getRootNode();
                 mComments.toggleCommentExpanded(mRootNode.getComment());
                 mCommentsListAdapter.notifyDataSetChanged();
-            }else {
+            } else {
                 mComments.toggleCommentExpanded(mComment);
                 mCommentsListAdapter.notifyDataSetChanged();
             }
@@ -612,7 +594,6 @@ public class CommentsActivity extends BaseListActivity implements
 
         @Override
         public long getItemId(int position) {
-            // Item ID not needed here:
             return 0;
         }
 
@@ -693,8 +674,6 @@ public class CommentsActivity extends BaseListActivity implements
                 timeAgoView.setText(", " + comment.getTimeAgo());
             } else {
                 authorView.setText(c.getString(R.string.deleted));
-                // We set this here so that convertView doesn't reuse the old
-                // timeAgoView value
                 timeAgoView.setText("");
             }
             expandView
@@ -730,27 +709,26 @@ public class CommentsActivity extends BaseListActivity implements
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         switch (requestCode) {
-        case ACTIVITY_LOGIN:
-            if (resultCode == RESULT_OK) {
-                if (mPendingVote != null) {
-                    mComments = new HNPostComments();
-                    mCommentsListAdapter.notifyDataSetChanged();
-                    startFeedLoading();
-                    Toast.makeText(this,
-                            getString(R.string.login_success_reloading),
-                            Toast.LENGTH_SHORT).show();
+            case ACTIVITY_LOGIN:
+                if (resultCode == RESULT_OK) {
+                    if (mPendingVote != null) {
+                        mComments = new HNPostComments();
+                        mCommentsListAdapter.notifyDataSetChanged();
+                        startFeedLoading();
+                        Toast.makeText(this,
+                                getString(R.string.login_success_reloading),
+                                Toast.LENGTH_SHORT).show();
+                    }
+                } else
+                    if (resultCode == RESULT_CANCELED) {
+                        Toast.makeText(this,
+                                getString(R.string.error_login_to_vote),
+                                Toast.LENGTH_LONG).show();
+                    }
+            case ACTIVITY_SPOTLIGHT:
+                if (resultCode == RESULT_OK) {
+                    openArticleReader();
                 }
-            } else
-                if (resultCode == RESULT_CANCELED) {
-                    Toast.makeText(this,
-                            getString(R.string.error_login_to_vote),
-                            Toast.LENGTH_LONG).show();
-                }
-        case ACTIVITY_SPOTLIGHT:
-            // The user tapped in the spotlight area
-            if (resultCode == RESULT_OK) {
-                openArticleReader();
-            }
         }
     }
 }

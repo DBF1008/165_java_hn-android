@@ -5,11 +5,9 @@ buildscript {
 }
 
 apply plugin: 'com.android.application'
+apply plugin: 'dagger.hilt.android.plugin'
 
 dependencies {
-    annotationProcessor "org.androidannotations:androidannotations:4.8.0"
-    implementation "org.androidannotations:androidannotations-api:4.8.0"
-
     implementation "androidx.core:core:1.9.0"
     implementation "androidx.legacy:legacy-support-core-utils:1.0.0"
     implementation "androidx.appcompat:appcompat:1.5.1"
@@ -18,38 +16,54 @@ dependencies {
     implementation "cz.msebera.android:httpclient:4.5.8"
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // Hilt
+    implementation 'com.google.dagger:hilt-android:2.48'
+    annotationProcessor 'com.google.dagger:hilt-compiler:2.48'
+
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.3.1'
+    testImplementation 'org.mockito:mockito-inline:5.2.0'
 }
 
 android {
     compileOptions {
         encoding "UTF-8"
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
     compileSdkVersion 33
 
     defaultConfig {
         applicationId "com.manuelmaly.hn"
-        minSdkVersion 14
+        minSdkVersion 19
         targetSdkVersion 33
         versionCode 26
         versionName "1.9.16"
     }
 
     signingConfigs {
-        def props = new Properties()
-        props.load(new FileInputStream(rootProject.file("release.properties")))
+        def propsFile = rootProject.file("release.properties")
+        if (propsFile.exists()) {
+            def props = new Properties()
+            props.load(new FileInputStream(propsFile))
 
-        release {
-            storeFile new File(props.keyStore.toString())
-            storePassword props.keyStorePassword
-            keyAlias props.keyAlias
-            keyPassword props.keyAliasPassword
+            release {
+                storeFile new File(props.keyStore.toString())
+                storePassword props.keyStorePassword
+                keyAlias props.keyAlias
+                keyPassword props.keyAliasPassword
+            }
         }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
+            if (signingConfigs.hasProperty('release')) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
 
             applicationVariants.all { variant ->

@@ -15,7 +15,7 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.ImageView;
 
-import com.manuelmaly.hn.login.LoginActivity_;
+import com.manuelmaly.hn.login.LoginActivity;
 import com.manuelmaly.hn.server.HNCredentials;
 import com.manuelmaly.hn.util.Run;
 
@@ -107,7 +107,7 @@ public class SettingsActivity extends PreferenceActivity implements OnSharedPref
     }
 
     private void onLoginClick() {
-      Intent intent = new Intent(SettingsActivity.this, LoginActivity_.class);
+      Intent intent = new Intent(SettingsActivity.this, LoginActivity.class);
       startActivityForResult(intent, REQUEST_LOGIN);
     }
 

@@ -3,7 +3,10 @@ package com.manuelmaly.hn.task;
 import android.app.Activity;
 import android.content.Context;
 
+import com.manuelmaly.hn.data.network.HNApiClient;
+import com.manuelmaly.hn.data.storage.FeedCache;
 import com.manuelmaly.hn.model.HNFeed;
+import com.manuelmaly.hn.parser.FeedParser;
 
 public class HNFeedTaskLoadMore extends HNFeedTaskBase {
 
@@ -30,8 +33,11 @@ public class HNFeedTaskLoadMore extends HNFeedTaskBase {
     }
 
     public static void start(Activity activity, ITaskFinishedHandler<HNFeed> finishedHandler,
-        HNFeed feedToAttachResultsTo, int taskCode) {
+            HNFeed feedToAttachResultsTo, int taskCode,
+            HNApiClient apiClient, FeedParser feedParser, FeedCache feedCache) {
         HNFeedTaskLoadMore task = getInstance(taskCode);
+        task.setContext(activity);
+        task.setDependencies(apiClient, feedParser, feedCache);
         task.setOnFinishedHandler(activity, finishedHandler, HNFeed.class);
         task.setFeedToAttachResultsTo(feedToAttachResultsTo);
         if (task.isRunning())

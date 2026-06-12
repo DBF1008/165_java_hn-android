@@ -2,8 +2,6 @@ package com.manuelmaly.hn.parser;
 
 import android.graphics.Color;
 
-import com.manuelmaly.hn.App;
-import com.manuelmaly.hn.Settings;
 import com.manuelmaly.hn.model.HNComment;
 import com.manuelmaly.hn.model.HNPostComments;
 import com.manuelmaly.hn.util.HNHelper;
@@ -15,6 +13,16 @@ import java.util.ArrayList;
 
 public class HNCommentsParser extends BaseHTMLParser<HNPostComments> {
 
+    private final String currentUser;
+
+    public HNCommentsParser() {
+        this.currentUser = null;
+    }
+
+    public HNCommentsParser(String currentUser) {
+        this.currentUser = currentUser;
+    }
+
     @Override
     public HNPostComments parseDocument(Element doc) throws Exception {
         if (doc == null)
@@ -23,8 +31,6 @@ public class HNCommentsParser extends BaseHTMLParser<HNPostComments> {
         ArrayList<HNComment> comments = new ArrayList<HNComment>();
 
         Elements tableRows = doc.select("table tr table tr:has(table)");
-
-        String currentUser = Settings.getUserName(App.getInstance());
 
         String text = null;
         String author = null;

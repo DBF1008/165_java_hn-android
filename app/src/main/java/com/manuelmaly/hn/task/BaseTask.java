@@ -8,7 +8,6 @@ import android.content.IntentFilter;
 import android.os.AsyncTask;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-import com.manuelmaly.hn.App;
 import com.manuelmaly.hn.reuse.CancelableRunnable;
 import com.manuelmaly.hn.server.IAPICommand;
 import com.manuelmaly.hn.task.ITaskFinishedHandler.TaskResultCode;
@@ -24,10 +23,6 @@ import java.lang.ref.SoftReference;
  * {@link LocalBroadcastManager}). Meaning, there will be no Zombie tasks
  * performing stuff for nothing (e.g. because their callback Activity has been
  * destroyed because of orientation change).
- * 
- * @author manuelmaly
- * @param <T>
- *            result type
  */
 public abstract class BaseTask<T extends Serializable> implements Runnable {
 
@@ -41,54 +36,41 @@ public abstract class BaseTask<T extends Serializable> implements Runnable {
     protected CancelableRunnable mTaskRunnable;
     protected int mTaskCode;
     protected Object mTag;
+    protected Context mContext;
 
     public BaseTask(String notificationBroadcastIntentID, int taskCode) {
         mNotificationBroadcastIntentID = notificationBroadcastIntentID;
         mTaskCode = taskCode;
     }
 
+    public void setContext(Context context) {
+        this.mContext = context;
+    }
+
+    protected Context getContext() {
+        return mContext;
+    }
+
     protected void startInBackground() {
         Run.inBackground(this);
     }
 
-    /**
-     * The broadcast will be received by listeners on the main thread
-     * implicitly.
-     */
     public void notifyFinished(int errorCode, Serializable result) {
         Intent broadcastIntent = new Intent(mNotificationBroadcastIntentID);
         broadcastIntent.putExtra(BROADCAST_INTENT_EXTRA_ERROR, errorCode);
         broadcastIntent.putExtra(BROADCAST_INTENT_EXTRA_RESULT, result);
-        LocalBroadcastManager.getInstance(App.getInstance()).sendBroadcast(broadcastIntent);
+        LocalBroadcastManager.getInstance(mContext).sendBroadcast(broadcastIntent);
     }
 
-    /**
-     * 
-     * @param tag
-     */
     public void setTag(Object tag) {
         mTag = tag;
     }
 
-    /**
-     * Registers the given {@link BroadcastReceiver} to this task's
-     * finished-notification.
-     * 
-     * @param receiver
-     */
     public void registerForFinishedNotification(BroadcastReceiver receiver) {
         IntentFilter filter = new IntentFilter(mNotificationBroadcastIntentID);
-        LocalBroadcastManager.getInstance(App.getInstance()).registerReceiver(receiver, filter);
+        LocalBroadcastManager.getInstance(mContext).registerReceiver(receiver, filter);
     }
 
-    /**
-     * Schedules behaviour to be executed when this task has finished, for the
-     * given Activity.
-     * 
-     * @param activity
-     * @param finishedHandler
-     * @param resultClazz
-     */
     public void setOnFinishedHandler(Activity activity, ITaskFinishedHandler<T> finishedHandler,
         final Class<T> resultClazz) {
         final SoftReference<Activity> activityRef = new SoftReference<Activity>(activity);
@@ -97,14 +79,12 @@ public abstract class BaseTask<T extends Serializable> implements Runnable {
         BroadcastReceiver finishedListener = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                LocalBroadcastManager.getInstance(App.getInstance()).unregisterReceiver(this);
+                LocalBroadcastManager.getInstance(mContext).unregisterReceiver(this);
 
                 if (activityRef == null || activityRef.get() == null || finishedHandlerRef == null
                     || finishedHandlerRef.get() == null)
                     return;
 
-                // Make hard references until the end of processing, so we don't
-                // lose those objects:
                 Activity activity = activityRef.get();
                 final ITaskFinishedHandler<T> finishedHandler = finishedHandlerRef.get();
 
@@ -117,13 +97,12 @@ public abstract class BaseTask<T extends Serializable> implements Runnable {
                     result = resultClazz.cast(rawResult);
                     errorCode = lowLevelErrorCode;
                 } else {
-                	result = null;
-                	if (lowLevelErrorCode == IAPICommand.ERROR_NONE) {
-                		// We have no error so far, but cannot cast the result data:
-                		errorCode = IAPICommand.ERROR_UNKNOWN;
-                	} else {
-                		errorCode = lowLevelErrorCode;
-                	}
+                    result = null;
+                    if (lowLevelErrorCode == IAPICommand.ERROR_NONE) {
+                        errorCode = IAPICommand.ERROR_UNKNOWN;
+                    } else {
+                        errorCode = lowLevelErrorCode;
+                    }
                 }
 
                 Runnable r = new Runnable() {

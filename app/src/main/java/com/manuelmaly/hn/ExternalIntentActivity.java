@@ -19,11 +19,11 @@ public class ExternalIntentActivity extends Activity {
 
     Intent i = null;
     if (uriString.endsWith("news.ycombinator.com")) { // Front page
-      i = new Intent(this, MainActivity_.class);
+      i = new Intent(this, MainActivity.class);
     } else if (uriString.contains("item")) { // Comment
       String postId = uri.getQueryParameter("id");
       HNPost postToOpen = new HNPost(uriString, null, null, null, postId, 0, 0, null);
-      i = new Intent(this, CommentsActivity_.class);
+      i = new Intent(this, CommentsActivity.class);
       i.putExtra(CommentsActivity.EXTRA_HNPOST, postToOpen);
     }
 

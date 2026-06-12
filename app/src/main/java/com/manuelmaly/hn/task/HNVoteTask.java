@@ -2,12 +2,10 @@ package com.manuelmaly.hn.task;
 
 import android.app.Activity;
 
-import com.manuelmaly.hn.App;
+import com.manuelmaly.hn.data.network.HNApiClient;
 import com.manuelmaly.hn.reuse.CancelableRunnable;
 import com.manuelmaly.hn.server.HNCredentials;
-import com.manuelmaly.hn.server.HNVoteCommand;
 import com.manuelmaly.hn.server.IAPICommand;
-import com.manuelmaly.hn.server.IAPICommand.RequestType;
 
 public class HNVoteTask extends BaseTask<Boolean> {
 
@@ -16,6 +14,7 @@ public class HNVoteTask extends BaseTask<Boolean> {
     private static HNVoteTask instance;
 
     private String mVoteURL;
+    private HNApiClient mApiClient;
 
     private static HNVoteTask getInstance(int taskCode) {
         synchronized (HNVoteTask.class) {
@@ -37,10 +36,13 @@ public class HNVoteTask extends BaseTask<Boolean> {
     public void setVoteURL(String voteURL) {
         mVoteURL = voteURL;
     }
-    
+
     public static void start(String voteURL, Activity activity,
-        ITaskFinishedHandler<Boolean> finishedHandler, int taskCode, Object tag) {
+            ITaskFinishedHandler<Boolean> finishedHandler, int taskCode, Object tag,
+            HNApiClient apiClient) {
         HNVoteTask task = getInstance(taskCode);
+        task.setContext(activity);
+        task.mApiClient = apiClient;
         task.setTag(tag);
         task.setOnFinishedHandler(activity, finishedHandler, Boolean.class);
         if (task.isRunning())
@@ -51,31 +53,29 @@ public class HNVoteTask extends BaseTask<Boolean> {
 
     class HNVoteTaskRunnable extends CancelableRunnable {
 
-        HNVoteCommand mVoteCommand;
-
         @Override
         public void run() {
             mResult = vote();
         }
 
         private Boolean vote() {
-            mVoteCommand = new HNVoteCommand(mVoteURL, null, RequestType.GET, false, null,
-                App.getInstance(), HNCredentials.getCookieStore(App.getInstance()));
-            mVoteCommand.run();
-            
-            if (mCancelled || mErrorCode != IAPICommand.ERROR_NONE)
-                return null;
-            
-            return mVoteCommand.getResponseContent();
+            try {
+                Boolean result = mApiClient.vote(mVoteURL,
+                        HNCredentials.getCookieStore(mContext));
 
+                if (mCancelled || result == null)
+                    return null;
+
+                return result;
+            } catch (Exception e) {
+                mErrorCode = IAPICommand.ERROR_UNKNOWN;
+                return null;
+            }
         }
 
         @Override
         public void onCancelled() {
-            if (mVoteCommand != null)
-                mVoteCommand.cancel();
+            // Cancellation handled at command level
         }
-
     }
-
 }
