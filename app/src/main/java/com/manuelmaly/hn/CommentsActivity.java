@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Parcelable;
+import android.view.MotionEvent;
 import androidx.core.view.MenuItemCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
@@ -90,6 +91,8 @@ public class CommentsActivity extends BaseListActivity implements
     CommentsAdapter mCommentsListAdapter;
     boolean mHaveLoadedPosts = false;
 
+    private SwipeGestureHelper mSwipeHelper;
+
     String mCurrentFontSize = null;
     int mFontSizeText;
     int mFontSizeMetadata;
@@ -162,6 +165,22 @@ public class CommentsActivity extends BaseListActivity implements
 
         loadIntermediateCommentsFromStore();
         startFeedLoading();
+
+        mSwipeHelper = new SwipeGestureHelper(this, new SwipeGestureHelper.OnSwipeListener() {
+            @Override
+            public void onSwipe(SwipeGestureHelper.SwipeDirection direction) {
+                if (isFinishing()) return;
+                switch (direction) {
+                    case LEFT:
+                        overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right);
+                        finish();
+                        break;
+                    case RIGHT:
+                        openArticleReader();
+                        break;
+                }
+            }
+        });
     }
 
     @Override
@@ -380,9 +399,17 @@ public class CommentsActivity extends BaseListActivity implements
         }
 
         startActivity(intent);
-        overridePendingTransition(android.R.anim.fade_in,
-                android.R.anim.fade_out);
+        overridePendingTransition(R.anim.slide_in_right,
+                R.anim.slide_out_left);
         finish();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (mSwipeHelper != null) {
+            mSwipeHelper.onTouchEvent(ev);
+        }
+        return super.dispatchTouchEvent(ev);
     }
 
     private void initCommentsHeader() {

@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.MotionEvent;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.MenuItemCompat;
@@ -65,6 +66,8 @@ public class ArticleReaderActivity extends AppCompatActivity {
 
   boolean mWebViewIsLoading = false;
 
+  private SwipeGestureHelper mSwipeHelper;
+
   @AfterViews
   @SuppressLint("SetJavaScriptEnabled")
   public void init() {
@@ -97,6 +100,24 @@ public class ArticleReaderActivity extends AppCompatActivity {
       @Override
       public void onRefresh() {
         mWebView.loadUrl(getArticleViewURL(mPost, mHtmlProvider, ArticleReaderActivity.this));
+      }
+    });
+
+    mSwipeHelper = new SwipeGestureHelper(this, new SwipeGestureHelper.OnSwipeListener() {
+      @Override
+      public void onSwipe(SwipeGestureHelper.SwipeDirection direction) {
+        if (isFinishing()) return;
+        switch (direction) {
+          case LEFT:
+            overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right);
+            finish();
+            break;
+          case RIGHT:
+            if (!mWebView.canScrollHorizontally(-1)) {
+              launchCommentsActivity();
+            }
+            break;
+        }
       }
     });
   }
@@ -251,8 +272,16 @@ public class ArticleReaderActivity extends AppCompatActivity {
       i.putExtra( EXTRA_HTMLPROVIDER_OVERRIDE, getIntent().getStringExtra( EXTRA_HTMLPROVIDER_OVERRIDE ) );
     }
     startActivity( i );
-    overridePendingTransition( android.R.anim.fade_in, android.R.anim.fade_out );
+    overridePendingTransition( R.anim.slide_in_right, R.anim.slide_out_left );
     finish();
+  }
+
+  @Override
+  public boolean dispatchTouchEvent(MotionEvent ev) {
+    if (mSwipeHelper != null) {
+      mSwipeHelper.onTouchEvent(ev);
+    }
+    return super.dispatchTouchEvent(ev);
   }
 
   private void setShowRefreshing(boolean showRefreshing) {
